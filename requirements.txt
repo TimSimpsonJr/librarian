@@ -1,0 +1,4 @@
+# Librarian runtime dependencies — pinned on Python 3.12.10.
+# Librarian aims to stay dependency-light for portability. PyYAML backs
+# scripts/write_note.py frontmatter emission (Task 1.1) and is imported at runtime.
+PyYAML==6.0.2

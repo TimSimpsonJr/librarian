@@ -1,5 +1,5 @@
 # Librarian dev dependencies — pinned on Python 3.12.10.
-# Librarian aims to stay dependency-light for portability. PyYAML backs
-# scripts/write_note.py frontmatter emission (Task 1.1).
+# Installs the runtime deps plus the test tooling. PyYAML lives in
+# requirements.txt because scripts/write_note.py imports it at runtime.
+-r requirements.txt
 pytest==9.0.3
-PyYAML==6.0.2
