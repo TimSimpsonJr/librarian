@@ -334,8 +334,15 @@ def test_non_string_title_raises_clear_error(tmp_path):
 # --- Fix 6: no YAML line-wrap on long scalars ---------------------------------
 
 def test_long_frontmatter_value_not_wrapped(tmp_path):
-    """A long frontmatter scalar stays on one line and round-trips (Fix 6)."""
-    long_value = "x" * 200
+    """A long frontmatter scalar stays on one line and round-trips (Fix 6).
+
+    Uses a long *spaced* value: PyYAML can only wrap at whitespace, so a value
+    full of spaces genuinely exercises the ``width=4096`` guard. (An unbreakable
+    token like ``"x"*200`` has no wrap points and would stay on one line even at
+    the default width, so it would NOT guard the fix — verified: the spaced value
+    wraps onto 5 lines at the default width and 1 line at 4096.)
+    """
+    long_value = ("lorem ipsum dolor sit amet " * 12).strip()
     spec = {
         "title": "Long Summary",
         "content": "Body.",
@@ -343,11 +350,20 @@ def test_long_frontmatter_value_not_wrapped(tmp_path):
     }
     result = write_note(spec, tmp_path)
     text = Path(result["path"]).read_text(encoding="utf-8")
-    # The 200-char value appears on a single physical line (no wrapped continuation).
-    summary_line = next(
+    # The value must occupy exactly ONE physical line in the frontmatter: a
+    # single line starts with "summary:" and a PyYAML continuation would be an
+    # extra indented line carrying part of the value (here, "lorem"/"ipsum").
+    summary_lines = [
         line for line in text.splitlines() if line.startswith("summary:")
-    )
-    assert long_value in summary_line
+    ]
+    assert len(summary_lines) == 1, "summary: must be a single physical line"
+    assert long_value in summary_lines[0], "the whole value is on that one line"
+    # No wrapped continuation line: a PyYAML continuation would be an indented
+    # line beginning with the next word of the value.
+    assert not any(
+        line.lstrip().startswith("lorem") and not line.startswith("summary:")
+        for line in text.splitlines()
+    ), "no wrapped continuation line should carry part of the value"
     # And it still parses back to the original string.
     fm = _parse_frontmatter(text)
     assert fm["summary"] == long_value
