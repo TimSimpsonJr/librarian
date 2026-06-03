@@ -1,0 +1,13 @@
+{
+  "name": "librarian",
+  "version": "0.1.0",
+  "description": "Structured, interlinked findings notes for follow-up and retrieval — portable Markdown/CSV by default, Obsidian-vault-aware when present. Shared output layer for the Fieldwork suite (Magpie, Research). Distinct from Prose Craft (outward-facing prose). Fieldwork: Librarian.",
+  "author": {
+    "name": "Tim Simpson",
+    "email": "tim@timsimpsonjr.com"
+  },
+  "homepage": "https://github.com/TimSimpsonJr/librarian",
+  "repository": "https://github.com/TimSimpsonJr/librarian",
+  "license": "MIT",
+  "keywords": ["notes", "obsidian", "markdown", "knowledge", "research", "findings"]
+}
