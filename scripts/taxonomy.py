@@ -120,14 +120,36 @@ def _tag_limit_bounds(taxonomy: dict) -> tuple[int | None, int | None]:
     return (limit.get("min"), limit.get("max"))
 
 
-def _content_type_tag(spec: dict) -> str | None:
-    """Resolve a spec's declared content type per the neutral contract.
+def _coerce_meta(spec: dict, index: int, warnings: list[str]) -> dict:
+    """Return ``spec['frontmatter_meta']`` as a dict, tolerating a non-dict value.
 
-    Precedence: ``frontmatter_meta.type`` if present, else the FIRST tag in
-    ``frontmatter_meta.tags`` (the tag_order convention puts the content-type tag
-    first). Returns ``None`` when neither is available.
+    Per the module's "flags-as-leads, not verdicts / nothing is dropped" contract,
+    a truthy but NON-dict ``frontmatter_meta`` (e.g. ``"oops"`` or ``["bad"]``) must
+    not raise an ``AttributeError`` when a ``.get`` is attempted on it. It is coerced
+    to ``{}`` and a warning (prefixed with the spec index) is appended instead. A
+    missing/``None`` value also yields ``{}`` but is NOT warned (it is the common,
+    well-formed "no metadata" case).
     """
-    meta = spec.get("frontmatter_meta") or {}
+    meta = spec.get("frontmatter_meta")
+    if meta is None:
+        return {}
+    if not isinstance(meta, dict):
+        warnings.append(
+            f"spec[{index}]: frontmatter_meta is not a dict "
+            f"(got {type(meta).__name__}); ignored"
+        )
+        return {}
+    return meta
+
+
+def _content_type_tag(meta: dict) -> str | None:
+    """Resolve the declared content type from an already-coerced ``meta`` dict.
+
+    Precedence: ``meta.type`` if present, else the FIRST tag in ``meta.tags`` (the
+    tag_order convention puts the content-type tag first). Returns ``None`` when
+    neither is available. ``meta`` is expected to be a real dict (the caller coerces
+    a non-dict ``frontmatter_meta`` via :func:`_coerce_meta` first).
+    """
     declared = meta.get("type")
     if isinstance(declared, str) and declared:
         return declared
@@ -173,7 +195,9 @@ def validate_note_specs(specs: list[dict], taxonomy: dict) -> dict:
     warnings: list[str] = []
 
     for index, spec in enumerate(specs):
-        meta = spec.get("frontmatter_meta") or {}
+        # Coerce a non-dict frontmatter_meta to {} (with a warning) so a truthy
+        # bad value (e.g. "oops" / ["bad"]) becomes a lead, not an AttributeError.
+        meta = _coerce_meta(spec, index, warnings)
 
         # --- title (the only "unusable" condition; still returned, but flagged) ---
         title = spec.get("title")
@@ -207,7 +231,7 @@ def validate_note_specs(specs: list[dict], taxonomy: dict) -> dict:
             folder = default_folder
 
         # --- content type: warn (lead, not verdict) if outside the vocabulary ---
-        ctype = _content_type_tag(spec)
+        ctype = _content_type_tag(meta)
         if ctype is not None and ctype not in content_types:
             warnings.append(
                 f"spec[{index}]: content type {ctype!r} not in taxonomy "

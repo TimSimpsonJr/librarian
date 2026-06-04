@@ -34,40 +34,14 @@ Intentionally OUT OF SCOPE here (later tasks / would be overbuild):
 
 from __future__ import annotations
 
-import re
 from collections import OrderedDict
 from pathlib import Path
 
 import yaml
 
+from scripts.textutil import slug
+
 __all__ = ["write_note", "slug"]
-
-
-# Characters illegal in Windows filenames (also covers the POSIX-unsafe "/").
-# The slug regex is derived from this set so the two cannot drift; control chars
-# (\x00-\x1f) are appended because they are unsafe everywhere but awkward to list.
-_WINDOWS_UNSAFE = r'<>:"/\|?*'
-_UNSAFE_RE = re.compile(f"[{re.escape(_WINDOWS_UNSAFE)}\x00-\x1f]")
-_WS_RE = re.compile(r"\s+")
-_DASH_RUN_RE = re.compile(r"-{2,}")
-
-
-def slug(title: str) -> str:
-    """Slugify ``title`` into a filesystem-safe stem.
-
-    Lowercases, replaces whitespace runs with ``-``, strips characters unsafe on
-    Windows filesystems (``<>:"/\\|?*`` and control chars), collapses repeated
-    hyphens, and trims leading/trailing hyphens. Deterministic.
-
-    May return ``""`` for a title made entirely of unsafe/whitespace characters;
-    callers that need a filename stem should fall back to ``"untitled"``.
-    """
-    text = title.lower()
-    text = _WS_RE.sub("-", text)          # whitespace runs -> single hyphen
-    text = _UNSAFE_RE.sub("", text)       # drop filesystem-unsafe + control chars
-    text = _DASH_RUN_RE.sub("-", text)    # collapse repeated hyphens
-    text = text.strip("-")                # trim leading/trailing hyphens
-    return text
 
 
 class _NoAliasSafeDumper(yaml.SafeDumper):
@@ -165,8 +139,15 @@ def _resolve_content(spec: dict) -> str:
 def _build_frontmatter(spec: dict, title: str) -> str:
     """Build the YAML frontmatter block (including the ``---`` fences).
 
-    Title leads; remaining keys come from ``frontmatter_meta`` in their given
-    order. ``sort_keys=False`` preserves order; ``allow_unicode=True`` keeps
+    ``spec["title"]`` is AUTHORITATIVE: it leads the block and a ``title`` key
+    inside ``frontmatter_meta`` can NEVER override it. The filename also derives
+    from ``spec["title"]`` (see :func:`write_note`), so pinning the frontmatter
+    ``title`` here keeps the two in lock-step — a meta ``title`` is silently
+    dropped rather than producing a file whose name and frontmatter disagree
+    (which would break later title-based vault matching). Remaining
+    ``frontmatter_meta`` keys follow in their given order.
+
+    ``sort_keys=False`` preserves order; ``allow_unicode=True`` keeps
     em-dashes / accented names intact rather than ``\\uXXXX``-escaping them;
     ``width`` is set large so long scalar values (e.g. a long ``summary:``) are
     not wrapped onto continuation lines; ``_NoAliasSafeDumper`` suppresses
@@ -175,6 +156,10 @@ def _build_frontmatter(spec: dict, title: str) -> str:
     fm = OrderedDict()
     fm["title"] = title
     for key, value in spec.get("frontmatter_meta", {}).items():
+        # spec title wins: ignore any meta "title" so the frontmatter title and
+        # the (spec-title-derived) filename can never diverge.
+        if key == "title":
+            continue
         fm[key] = value
 
     body = yaml.dump(

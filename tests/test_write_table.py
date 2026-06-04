@@ -12,9 +12,10 @@ line by line — rather than mocking the writer's internals.
 """
 
 import csv
+import sys
 from pathlib import Path
 
-from scripts.write_note import slug
+from scripts.textutil import slug
 from scripts.write_table import write_table
 
 
@@ -235,3 +236,70 @@ def test_creates_missing_out_dir(tmp_path):
     result = write_table([{"a": 1}], nested, "Nested")
     assert Path(result["csv_path"]).exists()
     assert Path(result["csv_path"]).parent == nested
+
+
+# --- Stdlib-only contract: importing write_table must NOT pull in PyYAML -------
+
+# Inline program run in a FRESH interpreter: it imports scripts.write_table and
+# prints whether "yaml" leaked into sys.modules as a side effect. Run in a child
+# process (not a monkeypatch) because once PyYAML is imported anywhere in THIS
+# interpreter — every other test parses frontmatter with it — it can never leave
+# sys.modules, so the only honest probe is a clean interpreter.
+_NO_YAML_SUBPROC = r'''
+import json, sys
+from pathlib import Path
+
+repo = Path(sys.argv[1])
+out_dir = Path(sys.argv[2])
+sys.path.insert(0, str(repo))
+
+# yaml must not already be loaded before we import the table writer.
+assert "yaml" not in sys.modules, "yaml was imported before write_table"
+
+import scripts.write_table  # the import under test
+
+# Prove the writer is actually usable in this yaml-free interpreter, not just
+# importable (calls slug via scripts.textutil for the CSV stem). out_dir is a
+# temp dir supplied by the parent, so nothing is written into the repo tree.
+result = scripts.write_table.write_table([{"a": 1, "b": 2}], out_dir, "Probe")
+
+print(json.dumps({
+    "yaml_in_modules": "yaml" in sys.modules,
+    "row_count": result["row_count"],
+    "columns": result["columns"],
+}))
+'''
+
+
+def test_import_write_table_does_not_import_yaml(tmp_path):
+    """Fix 1: a table-only consumer importing scripts.write_table must not load PyYAML.
+
+    Spawns a fresh interpreter (so a yaml already loaded by the rest of THIS suite
+    cannot mask the leak), imports scripts.write_table, and asserts "yaml" is absent
+    from sys.modules afterward. Pre-fix, write_table imported slug from write_note,
+    which imports yaml at module scope — so importing write_table transitively pulled
+    in PyYAML, breaking its stdlib-only contract. The slug move to scripts.textutil
+    severs that coupling.
+    """
+    import json
+    import subprocess
+
+    repo_root = Path(__file__).resolve().parents[1]
+    probe_out = tmp_path / "probe_out"
+    proc = subprocess.run(
+        [sys.executable, "-c", _NO_YAML_SUBPROC, str(repo_root), str(probe_out)],
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode == 0, (
+        f"subprocess failed (rc={proc.returncode}):\n"
+        f"STDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}"
+    )
+
+    payload = json.loads(proc.stdout.strip().splitlines()[-1])
+    assert payload["yaml_in_modules"] is False, (
+        "importing scripts.write_table must NOT import PyYAML (stdlib-only contract)"
+    )
+    # And the writer still works in the yaml-free interpreter.
+    assert payload["row_count"] == 1
+    assert payload["columns"] == ["a", "b"]

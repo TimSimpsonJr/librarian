@@ -369,6 +369,46 @@ def test_long_frontmatter_value_not_wrapped(tmp_path):
     assert fm["summary"] == long_value
 
 
+# --- Fix: spec title is authoritative over a frontmatter_meta "title" ---------
+
+
+def test_meta_title_cannot_override_spec_title(tmp_path):
+    """A frontmatter_meta "title" must NOT override spec["title"] (identity guard).
+
+    Both the filename AND the frontmatter title derive from spec["title"]. A caller
+    that also stuffs a different "title" into frontmatter_meta must not produce a file
+    whose name and frontmatter title disagree (which would silently corrupt later
+    title-based vault matching). The meta title is dropped; other meta keys still land.
+    """
+    spec = {
+        "title": "Canonical Title",
+        "content": "Body.",
+        "frontmatter_meta": {
+            "title": "Different",          # must be ignored — spec title wins
+            "tags": ["report", "x"],
+        },
+    }
+    result = write_note(spec, tmp_path)
+
+    # Filename derives from spec["title"], not the meta "title".
+    written = tmp_path / "canonical-title.md"
+    assert result["path"] == str(written)
+    assert written.exists()
+    assert "different" not in written.name
+
+    text = written.read_text(encoding="utf-8")
+    fm = _parse_frontmatter(text)
+    # Frontmatter title equals the spec title, NOT the meta override.
+    assert fm["title"] == "Canonical Title"
+    assert fm["title"] != "Different"
+    # title still leads the block...
+    assert list(fm.keys())[0] == "title"
+    # ...and the OTHER meta keys still land.
+    assert fm["tags"] == ["report", "x"]
+    # The string "Different" appears nowhere in the rendered file.
+    assert "Different" not in text
+
+
 # --- Fix 7: no YAML anchors/aliases -------------------------------------------
 
 def test_shared_object_emits_no_yaml_aliases(tmp_path):

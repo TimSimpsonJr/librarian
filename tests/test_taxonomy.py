@@ -210,6 +210,50 @@ def test_tag_count_outside_limit_warns():
     assert any("tag" in w.lower() for w in result["warnings"])
 
 
+@pytest.mark.parametrize("bad_meta", ["oops", ["bad"], 42, ("x",)])
+def test_non_dict_frontmatter_meta_warns_but_does_not_crash(bad_meta):
+    """A truthy NON-dict frontmatter_meta is a LEAD, not an AttributeError.
+
+    Pre-fix, ``spec.get("frontmatter_meta") or {}`` left a truthy non-dict value
+    (e.g. ``"oops"`` / ``["bad"]``) in place, and the subsequent ``.get(...)`` raised
+    AttributeError — violating the module's "flags-as-leads, nothing dropped" contract.
+    The value must instead be coerced to ``{}`` with a warning, and the spec must still
+    normalize to exactly one record.
+    """
+    tax = load_taxonomy()
+    specs = [{"title": "X", "frontmatter_meta": bad_meta}]
+
+    result = validate_note_specs(specs, tax)  # must NOT raise
+
+    # Exactly one normalized record (nothing dropped).
+    assert len(result["normalized"]) == 1
+    [norm] = result["normalized"]
+    assert norm["title"] == "X"
+    # The bad meta was coerced to an empty dict on the normalized record.
+    assert norm["frontmatter_meta"] == {}
+    # Folder falls back to the taxonomy default (no usable meta.folder).
+    assert norm["folder"] == "Inbox"
+    # A warning flags the non-dict frontmatter_meta.
+    assert any(
+        "frontmatter_meta" in w and "not a dict" in w for w in result["warnings"]
+    ), result["warnings"]
+
+
+def test_missing_or_none_frontmatter_meta_is_not_warned():
+    """An ABSENT / None frontmatter_meta is the well-formed no-metadata case (no warning).
+
+    Only a truthy non-dict value is a lead; a missing key must stay silent so the common
+    case does not spam warnings (regression guard for the coercion's None branch).
+    """
+    tax = load_taxonomy()
+    result_absent = validate_note_specs([{"title": "No Meta"}], tax)
+    result_none = validate_note_specs([{"title": "Null Meta", "frontmatter_meta": None}], tax)
+
+    for result in (result_absent, result_none):
+        assert len(result["normalized"]) == 1
+        assert not any("frontmatter_meta" in w for w in result["warnings"]), result["warnings"]
+
+
 def test_normalized_frontmatter_meta_does_not_alias_input():
     """The normalized record's frontmatter_meta must be a COPY, not the input object.
 

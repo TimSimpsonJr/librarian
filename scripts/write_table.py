@@ -6,14 +6,16 @@ GitHub-flavored Markdown-table mirror string, then returns a small result dict.
 The CSV is the portable artifact; the Markdown string is for a caller to embed
 inline in a note / vault (Magpie design §5.7, references/prior-art.md).
 
-This is the tabular sibling of :mod:`scripts.write_note`. It reuses that
-module's :func:`~scripts.write_note.slug` for the filename stem so the two
-writers cannot drift on slugging rules.
+This is the tabular sibling of :mod:`scripts.write_note`. Both writers share
+:func:`scripts.textutil.slug` for the filename stem so the two cannot drift on
+slugging rules. Importing ``slug`` from the stdlib-only :mod:`scripts.textutil`
+(rather than from ``write_note``) is deliberate: it keeps this module from
+transitively importing PyYAML, preserving the stdlib-only contract below.
 
 Design contract — keep this function PURE and deterministic given its inputs:
 
-* Stdlib only (``csv``, ``pathlib``, plus the reused ``slug``). No pandas, no
-  network, no clock (``datetime.now``/``time``), no randomness.
+* Stdlib only (``csv``, ``pathlib``, plus the stdlib-only ``slug``). No pandas,
+  no PyYAML, no network, no clock (``datetime.now``/``time``), no randomness.
 * No vault, no config/taxonomy, no note-embedding, no vault placement. The
   Markdown mirror is *returned* for a caller to embed; this module never decides
   where it goes.
@@ -33,7 +35,7 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 
-from scripts.write_note import slug
+from scripts.textutil import slug
 
 __all__ = ["write_table"]
 
