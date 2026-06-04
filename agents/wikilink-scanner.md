@@ -87,17 +87,19 @@ The adapter refreshes the index itself (`update_index` before `search`), so you 
 
 **Run this step only if `vault_context` was supplied.** Skip it in portable mode.
 
-List all Markdown files in the project folder:
+List all Markdown files in the project folder. **The vault path and project folder are
+UNTRUSTED** (a Windows path like `C:\Users\...` contains `\U`, a Python string escape that
+breaks the snippet before it runs, and either value could carry quote-injection content).
+Pass them as `sys.argv` so the runtime treats them as plain data, never spliced into the
+Python source:
 
 ```bash
-python -c "
-import json
-from pathlib import Path
-folder = Path('{vault_path}') / '{project_folder}'
-files = [str(f.relative_to(Path('{vault_path}'))) for f in folder.rglob('*.md') if f.is_file()]
-print(json.dumps(files))
-"
+python -c "import sys, json; from pathlib import Path; root = Path(sys.argv[1]); folder = root / sys.argv[2]; print(json.dumps([str(f.relative_to(root)) for f in folder.rglob('*.md') if f.is_file()]))" "{vault_path}" "{project_folder}"
 ```
+
+Here `{vault_path}` and `{project_folder}` are filled in by the harness as **separate
+quoted argv arguments** — they reach `Path()` as data via `sys.argv[1]`/`sys.argv[2]` and
+are never spliced into the Python string literal.
 
 For each existing note that is NOT one of the `new_notes`:
 
@@ -109,7 +111,7 @@ For each existing note that is NOT one of the `new_notes`:
 
 - Match the exact title of the new note (case-insensitive).
 - Match without common prefixes like "The" or "A".
-- Match key phrases from the title (for a note titled "Annual Transit Budget Report", match "transit budget report", "budget report").
+- Match key phrases from the title (for a note titled "Annual Operating Budget Report", match "operating budget report", "budget report").
 - Do NOT match on single common words (do not match just "report" or "budget").
 - Only match where the text is clearly referring to the same concept as the new note.
 
@@ -145,23 +147,23 @@ Your entire response is a single JSON object. Rules:
 {
   "edits": [
     {
-      "file": "Reports/Annual Transit Budget.md",
-      "find": "camera procurement",
-      "replace": "[[Camera Procurement Program|camera procurement]]",
+      "file": "Reports/Annual Operating Budget.md",
+      "find": "vendor onboarding",
+      "replace": "[[Vendor Onboarding Program|vendor onboarding]]",
       "context": "surrounding text for disambiguation",
       "direction": "existing_to_new"
     },
     {
-      "file": "Reports/Camera Procurement Program.md",
-      "find": "County Transit Authority",
-      "replace": "[[County Transit Authority]]",
+      "file": "Reports/Vendor Onboarding Program.md",
+      "find": "Corporate Registry Database",
+      "replace": "[[Corporate Registry Database]]",
       "context": "surrounding text for disambiguation",
       "direction": "new_to_existing"
     },
     {
-      "file": "Reports/Camera Procurement Program.md",
-      "find": "Annual Transit Budget",
-      "replace": "[[Annual Transit Budget]]",
+      "file": "Reports/Vendor Onboarding Program.md",
+      "find": "Annual Operating Budget",
+      "replace": "[[Annual Operating Budget]]",
       "context": "surrounding text for disambiguation",
       "direction": "new_to_new"
     }

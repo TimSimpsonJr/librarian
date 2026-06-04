@@ -78,11 +78,22 @@ portable mode there is no index to query; routing is handled in Step 3 by defaul
 `action` to `create`.
 
 When `vault_context` IS supplied, use Bash to query the vault index for notes related
-to the batch (the vault adapter is the only place that imports the index):
+to the batch (the vault adapter is the only place that imports the index).
+
+**The vault path and query text are UNTRUSTED.** Never interpolate them into the shell
+command or into Python source: a Windows path like `C:\Users\...` contains `\U` (a Python
+string escape that breaks the snippet before it runs), and query text is a quote-injection
+surface. Instead pass the scripts dir, vault path, and query as `sys.argv`, so the runtime
+treats them as plain data:
 
 ```bash
-python -c "import sys; sys.path.insert(0, '{scripts_dir}'); from vault_index import search; from pathlib import Path; import json; print(json.dumps(search(Path('{vault_root}'), 'query terms'), indent=2))"
+python -c "import sys; sys.path.insert(0, sys.argv[1]); from vault_index import search; from pathlib import Path; import json; print(json.dumps(search(Path(sys.argv[2]), sys.argv[3]), indent=2))" "{scripts_dir}" "{vault_root}" "query terms"
 ```
+
+Here `{scripts_dir}`, `{vault_root}`, and the query are filled in by the harness as
+**separate quoted argv arguments** — the path reaches `Path()` and the query reaches
+`search()` as data via `sys.argv[2]`/`sys.argv[3]`, never spliced into the Python string
+literal.
 
 Run 2-4 queries:
 - One broad query using the project/topic name
@@ -189,18 +200,18 @@ Each `notes_to_create[]` entry is in the neutral input contract:
   "topic": "original topic or project name",
   "notes_to_create": [
     {
-      "title": "North County Transit Camera Deployment",
+      "title": "Acme Holdings Q3 Annual Filing",
       "content": "Key facts and arguments the writer should include in the final note.",
       "frontmatter_meta": {
         "type": "report",
-        "tags": ["report", "north-county", "transit"],
+        "tags": ["report", "acme-holdings", "filings"],
         "folder": "Inbox"
       },
       "citations": [
-        "https://example.org/agency/report-2024.html",
-        {"doc_id": "PRR-2024-0142", "page": 7}
+        "https://example.org/registry/acme-holdings-2024.html",
+        {"doc_id": "FILING-2024-0142", "page": 7}
       ],
-      "link_hints": ["County Transit Authority", "Regional Mobility Plan"],
+      "link_hints": ["Acme Holdings", "Corporate Registry Database"],
       "priority": "primary",
       "action": "create"
     }
@@ -215,8 +226,8 @@ Each `notes_to_create[]` entry is in the neutral input contract:
   },
   "contradictions_detected": [
     {
-      "claim_a": "Agency reports 12 cameras deployed in 2024.",
-      "claim_b": "Vendor filing lists 30 cameras in the same jurisdiction.",
+      "claim_a": "Annual report states the 2024 budget was 12 million.",
+      "claim_b": "Board minutes record the same 2024 budget as 30 million.",
       "source_a": "https://example.org/a",
       "source_b": "https://example.org/b",
       "nature": "factual"
