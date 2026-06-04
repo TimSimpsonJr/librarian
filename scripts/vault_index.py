@@ -143,13 +143,27 @@ def _init_tables(conn: sqlite3.Connection) -> None:
         )
 
 
+def _normalize_newlines(text: str) -> str:
+    """Normalize CRLF / lone-CR line endings to LF before frontmatter parsing.
+
+    Notes authored on Windows (including by Librarian's own ``write_note.py``) use
+    CRLF endings, so the ``^---\\n ... \\n---`` fences below would never match and
+    the YAML frontmatter would (a) yield no ``title``/``tags`` and (b) leak into the
+    indexed body. Folding ``\\r\\n`` and any stray lone ``\\r`` to ``\\n`` first makes
+    the fence regexes line-ending-agnostic on every platform.
+    """
+    return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
 def _parse_frontmatter(text: str) -> tuple[str, str]:
     """Extract title and tags from YAML frontmatter. Returns (title, tags_csv).
 
     Deliberately a light regex parse (not a YAML load): the adapter must stay
     stdlib-only, and the index only needs the title/tags scalars for ranking and
-    the exact-title check.
+    the exact-title check. Line endings are normalized to LF first so CRLF notes
+    (Windows / ``write_note.py``) parse identically to LF ones.
     """
+    text = _normalize_newlines(text)
     title = ""
     tags = ""
     fm_match = re.match(r"^---\n(.*?)\n---", text, re.DOTALL)
@@ -169,7 +183,8 @@ def _parse_frontmatter(text: str) -> tuple[str, str]:
 
 
 def _body_text(text: str) -> str:
-    """Strip frontmatter, return body text."""
+    """Strip frontmatter, return body text (line endings normalized to LF first)."""
+    text = _normalize_newlines(text)
     stripped = re.sub(r"^---\n.*?\n---\n?", "", text, count=1, flags=re.DOTALL)
     return stripped.strip()
 
@@ -178,7 +193,12 @@ def _index_file(conn: sqlite3.Connection, vault_root: Path, rel_path: str, mtime
     """Index or update a single file (read text, parse, upsert into ``notes``)."""
     full = vault_root / rel_path
     try:
-        text = full.read_text(encoding="utf-8")
+        # newline="" disables universal-newline translation so the bytes on disk
+        # (including CRLF written by Windows / write_note.py) reach the parser
+        # faithfully; _parse_frontmatter / _body_text normalize to LF themselves.
+        # (Path.read_text gained a `newline` kwarg only in 3.13, so open() here.)
+        with full.open("r", encoding="utf-8", newline="") as fh:
+            text = fh.read()
     except (OSError, UnicodeDecodeError):
         return
     title, tags = _parse_frontmatter(text)

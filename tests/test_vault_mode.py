@@ -127,6 +127,68 @@ def test_portable_mode_basic_placement_and_links(tmp_path: Path):
     assert all(e.get("target_vault_path") is None for e in result["link_plan"])
 
 
+def test_portable_mode_honors_classifier_folder(tmp_path: Path):
+    """Fix 4 (portable): placement uses frontmatter_meta['folder'] when present.
+
+    The classifier/validator puts the chosen folder in frontmatter_meta['folder']
+    (there is no top-level 'folder'). resolve_notes must route under it, not the
+    taxonomy default.
+    """
+    tax = load_taxonomy()  # default_folder == "Inbox"
+    specs = [
+        {
+            "title": "Smith Deposition Summary",
+            "content": "Summary body.",
+            "frontmatter_meta": {"folder": "Cases/2024"},
+            "link_hints": [],
+        },
+        {
+            # No folder in frontmatter_meta -> falls back to the taxonomy default.
+            "title": "Loose Note",
+            "content": "x",
+            "frontmatter_meta": {"tags": ["misc"]},
+            "link_hints": [],
+        },
+    ]
+
+    result = resolve_notes(specs, taxonomy=tax)
+
+    placements = {p["title"]: p for p in result["placements"]}
+    # Classifier-chosen folder is honored for both folder and the derived path.
+    assert placements["Smith Deposition Summary"]["folder"] == "Cases/2024"
+    assert (
+        placements["Smith Deposition Summary"]["path"]
+        == "Cases/2024/smith-deposition-summary.md"
+    )
+    # The folder-less spec falls back to the default.
+    assert placements["Loose Note"]["folder"] == "Inbox"
+    assert placements["Loose Note"]["path"] == "Inbox/loose-note.md"
+
+
+def test_portable_mode_non_dict_frontmatter_meta_falls_back(tmp_path: Path):
+    """Fix 4 (portable): a non-dict frontmatter_meta degrades to the default, no crash.
+
+    Mirrors the tolerance taxonomy.validate_note_specs has: a truthy-but-bad
+    frontmatter_meta (e.g. the string "oops") must not raise; placement just uses
+    the taxonomy default folder.
+    """
+    tax = load_taxonomy()  # default_folder == "Inbox"
+    specs = [
+        {
+            "title": "Malformed Meta Note",
+            "content": "x",
+            "frontmatter_meta": "oops",  # not a dict
+            "link_hints": [],
+        }
+    ]
+
+    result = resolve_notes(specs, taxonomy=tax)  # must NOT raise
+
+    placement = result["placements"][0]
+    assert placement["folder"] == "Inbox"
+    assert placement["path"] == "Inbox/malformed-meta-note.md"
+
+
 def test_portable_mode_creates_no_index_db(tmp_path: Path):
     """The portable path must not create an index db anywhere (Coupling 1 invariant)."""
     tax = load_taxonomy()
@@ -253,6 +315,49 @@ def test_vault_mode_incoming_title_match_routes_update(vault: Path):
     assert placements["Totally New Subject Nobody Indexed"]["folder"] == "Inbox"
 
 
+def test_vault_mode_create_honors_classifier_folder(vault: Path):
+    """Fix 4 (vault create / no match): a new note honors frontmatter_meta['folder'].
+
+    When no existing note matches the title, the create placement must use the
+    classifier-selected folder rather than the taxonomy default; a non-dict
+    frontmatter_meta falls back to the default without crashing. The UPDATE path
+    (existing title match adopts the existing note's folder) is asserted separately
+    in test_vault_mode_incoming_title_match_routes_update.
+    """
+    tax = load_taxonomy()  # default_folder == "Inbox"
+    specs = [
+        {
+            # No seeded note has this title -> create under the chosen folder.
+            "title": "Brand New Surveillance Memo",
+            "content": "A memo with no existing match.",
+            "frontmatter_meta": {"folder": "Cases/2025"},
+            "link_hints": [],
+        },
+        {
+            "title": "Another Fresh Note",
+            "content": "x",
+            "frontmatter_meta": "oops",  # non-dict -> default folder, no crash
+            "link_hints": [],
+        },
+    ]
+
+    result = resolve_notes(
+        specs, vault_context={"vault_path": str(vault)}, taxonomy=tax
+    )
+
+    placements = {p["title"]: p for p in result["placements"]}
+    # Create/no-match honors the classifier folder for folder + derived path.
+    assert placements["Brand New Surveillance Memo"]["action"] == "create"
+    assert placements["Brand New Surveillance Memo"]["folder"] == "Cases/2025"
+    assert (
+        placements["Brand New Surveillance Memo"]["path"]
+        == "Cases/2025/brand-new-surveillance-memo.md"
+    )
+    # Non-dict frontmatter_meta degrades to the default folder, no exception.
+    assert placements["Another Fresh Note"]["folder"] == "Inbox"
+    assert placements["Another Fresh Note"]["path"] == "Inbox/another-fresh-note.md"
+
+
 def test_vault_mode_refreshes_index_before_search(vault: Path):
     """Gap #6: the adapter refreshes the index itself; a note added just now is findable.
 
@@ -329,6 +434,101 @@ def test_adapter_list_notes(vault: Path):
         "License Plate Readers",
         "Prior Camera Audit",
     } <= titles
+
+
+def test_adapter_indexes_crlf_note_frontmatter(tmp_path: Path):
+    """Fix 5: a CRLF-fenced note is parsed for frontmatter title/tags, body un-leaked.
+
+    Windows notes (including write_note.py output) use CRLF line endings. Pre-fix the
+    LF-only fence regexes matched nothing, so the indexer fell back to the filename
+    stem for the title and the frontmatter leaked into the indexed body. The note
+    below has a frontmatter title DELIBERATELY different from its filename stem, so a
+    successful parse is provable: search/note_exists must find it by the FRONTMATTER
+    title (not the stem), and the indexed body/excerpt must not contain the `---`
+    fences or the `title:`/`tags:` frontmatter lines.
+    """
+    from scripts import vault_index
+
+    vault = tmp_path / "crlfvault"
+    (vault / "Notes").mkdir(parents=True)
+    # Filename stem "alpr-memo-2024" != frontmatter title "Surveillance Camera Memo".
+    crlf_text = (
+        "---\r\n"
+        "title: Surveillance Camera Memo\r\n"
+        "tags: [alpr, budget]\r\n"
+        "---\r\n"
+        "\r\n"
+        "The county approved automated license plate readers for the corridor.\r\n"
+    )
+    (vault / "Notes" / "alpr-memo-2024.md").write_bytes(crlf_text.encode("utf-8"))
+
+    vault_index.update_index(vault)
+
+    # Found by FRONTMATTER title, not the filename stem (proves CRLF frontmatter parsed).
+    assert vault_index.note_exists(vault, "Surveillance Camera Memo") is True
+    # The filename stem must NOT have become the title (the pre-fix fallback).
+    assert vault_index.note_exists(vault, "alpr-memo-2024") is False
+
+    hits = vault_index.search(vault, "automated license plate readers")
+    titles = {h["title"] for h in hits}
+    assert "Surveillance Camera Memo" in titles, (
+        "CRLF note must be searchable by its frontmatter title"
+    )
+
+    # Tags parsed from the CRLF frontmatter (also via the fence regex).
+    list_by_title = {n["title"]: n for n in vault_index.list_notes(vault)}
+    assert "alpr" in list_by_title["Surveillance Camera Memo"]["tags"]
+
+    # The frontmatter must NOT have leaked into the indexed body/excerpt.
+    memo_hit = next(h for h in hits if h["title"] == "Surveillance Camera Memo")
+    assert "---" not in memo_hit["excerpt"]
+    assert "title:" not in memo_hit["excerpt"]
+    assert "tags:" not in memo_hit["excerpt"]
+    assert memo_hit["excerpt"].startswith("The county approved")
+
+
+def test_adapter_crlf_note_resolves_update_in_vault_mode(tmp_path: Path):
+    """Fix 5 (through resolve_notes): a CRLF note routes update by its frontmatter title.
+
+    End-to-end check of the bug's real consequence: exact-title update routing
+    (vault_mode) misses CRLF notes when filename != frontmatter title, because the
+    indexer fell back to the stem. With CRLF-tolerant parsing, a spec whose title
+    equals the note's FRONTMATTER title is detected as an update at the note's real
+    folder/path.
+    """
+    tax = load_taxonomy()
+
+    vault = tmp_path / "crlfvault2"
+    (vault / "Reports").mkdir(parents=True)
+    crlf_text = (
+        "---\r\n"
+        "title: Quarterly Surveillance Review\r\n"
+        "---\r\n"
+        "\r\n"
+        "Existing review of camera deployments.\r\n"
+    )
+    # Stem "q3-review" differs from the frontmatter title.
+    (vault / "Reports" / "q3-review.md").write_bytes(crlf_text.encode("utf-8"))
+
+    specs = [
+        {
+            "title": "Quarterly Surveillance Review",  # matches FRONTMATTER title
+            "content": "Refreshed quarterly review.",
+            "link_hints": [],
+            "priority": "primary",
+        }
+    ]
+
+    result = resolve_notes(
+        specs, vault_context={"vault_path": str(vault)}, taxonomy=tax
+    )
+
+    placement = result["placements"][0]
+    assert placement["action"] == "update", (
+        "CRLF note must be matched by frontmatter title and routed as an update"
+    )
+    assert placement["path"] == "Reports/q3-review.md"
+    assert placement["folder"] == "Reports"
 
 
 def test_adapter_db_lives_under_vault_dot_librarian(vault: Path):
@@ -538,11 +738,27 @@ assert vault_index.fts5_available() is False, "probe override failed"
     "---\ntitle: Unrelated\n---\n\nNothing to see here about zoning.\n",
     encoding="utf-8",
 )
+# Fix 5 cross-check on the LIKE backend: a CRLF note whose frontmatter title
+# differs from its filename stem must still be parsed (found by frontmatter title,
+# body un-leaked) under the FTS5-free path too.
+(vault / "Notes" / "crlf-stem.md").write_bytes(
+    (
+        "---\r\n"
+        "title: CRLF Title Note\r\n"
+        "tags: [budget]\r\n"
+        "---\r\n"
+        "\r\n"
+        "The camera procurement crlf body mentions budget.\r\n"
+    ).encode("utf-8")
+)
 
 vault_index.update_index(vault)
 
 hits = vault_index.search(vault, "camera procurement")
 hit = hits[0] if hits else {}
+
+crlf_hits = vault_index.search(vault, "crlf body")
+crlf_excerpt = crlf_hits[0]["excerpt"] if crlf_hits else ""
 
 # Adversarial strings must not crash the LIKE path either (Fix 1 cross-check).
 adversarial = ["Smith v. Jones (2020)", "Acme OR Globex", "NEAR(x)", "(", "*", '"']
@@ -560,6 +776,10 @@ print(json.dumps({
     "note_exists_ci": vault_index.note_exists(vault, "CAMERA procurement"),
     "list_titles": sorted(n["title"] for n in vault_index.list_notes(vault)),
     "adversarial_ok": adversarial_ok,
+    # Fix 5 parity: CRLF note found by frontmatter title, body un-leaked, on LIKE.
+    "crlf_note_exists": vault_index.note_exists(vault, "CRLF Title Note"),
+    "crlf_stem_is_not_title": not vault_index.note_exists(vault, "crlf-stem"),
+    "crlf_body_clean": "---" not in crlf_excerpt and "title:" not in crlf_excerpt,
 }))
 '''
 
@@ -604,3 +824,7 @@ def test_like_fallback_parity_in_subprocess(tmp_path: Path):
     assert "Unrelated" in payload["list_titles"]
     # Adversarial inputs do not crash the LIKE path.
     assert payload["adversarial_ok"] is True, payload["adversarial_ok"]
+    # Fix 5 parity: CRLF frontmatter parsed on the LIKE backend too.
+    assert payload["crlf_note_exists"] is True, "LIKE path must parse CRLF frontmatter title"
+    assert payload["crlf_stem_is_not_title"] is True, "CRLF note must not fall back to its stem"
+    assert payload["crlf_body_clean"] is True, "CRLF frontmatter must not leak into indexed body"

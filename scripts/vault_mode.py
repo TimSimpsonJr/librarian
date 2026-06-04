@@ -94,6 +94,25 @@ def _default_folder(taxonomy: dict) -> str:
     return taxonomy.get("default_folder") or DEFAULT_TAXONOMY["default_folder"]
 
 
+def _spec_folder(spec: dict, taxonomy: dict) -> str:
+    """Folder the classifier/validator chose for this note, else the taxonomy default.
+
+    The neutral note spec has NO top-level ``folder``; placement lives in
+    ``frontmatter_meta["folder"]`` (what :func:`scripts.taxonomy.validate_note_specs`
+    reads). Honor it here so ``resolve_notes`` does not discard the chosen placement
+    (the shipped contract in ``skills/librarian/SKILL.md`` and
+    ``agents/classify-agent.md``). Mirrors the validator's tolerance: a non-dict
+    ``frontmatter_meta`` (or a missing/blank/non-str ``folder``) falls back to the
+    default rather than crashing.
+    """
+    meta = spec.get("frontmatter_meta")
+    if isinstance(meta, dict):
+        folder = meta.get("folder")
+        if isinstance(folder, str) and folder:
+            return folder
+    return _default_folder(taxonomy)
+
+
 def _portable_path(folder: str, title: str) -> str:
     """Relative ``<folder>/<slug>.md`` placement (forward-slashed, slug fallback)."""
     stem = slug(title) or "untitled"
@@ -103,20 +122,21 @@ def _portable_path(folder: str, title: str) -> str:
 def _resolve_portable(specs: list[dict], taxonomy: dict) -> dict:
     """Portable placement + batch/hint-only link plan. NO index, NO sqlite.
 
-    Placement is ``default_folder`` + slug; ``action`` is honored as given. Links
-    are resolved only among this batch's titles plus each spec's ``link_hints``: a
+    Placement is the classifier-selected ``frontmatter_meta["folder"]`` (else the
+    taxonomy ``default_folder``) + slug; ``action`` is honored as given. Links are
+    resolved only among this batch's titles plus each spec's ``link_hints``: a
     hint that matches another batch note's title is a real intra-batch link
     (``resolved_in_batch=True``); a hint with no batch match is still surfaced as
     an UNRESOLVED edge (``resolved_in_batch=False``, ``target_vault_path=None``) —
     there is no index to resolve it against, by design.
     """
-    folder = _default_folder(taxonomy)
-
     placements: list[dict] = []
     batch_titles: set[str] = set()
     for spec in specs:
         title = _spec_title(spec)
         batch_titles.add(title)
+        # Honor the classifier-selected folder (frontmatter_meta.folder); else default.
+        folder = _spec_folder(spec, taxonomy)
         placements.append(
             {
                 "title": title,
@@ -190,8 +210,11 @@ def _resolve_vault(specs: list[dict], taxonomy: dict, vault_context: dict) -> di
     for spec in specs:
         title = _spec_title(spec)
         action = _spec_action(spec)
-        folder = default_folder
-        path = _portable_path(default_folder, title)
+        # CREATE / no-match default: honor the classifier-selected folder
+        # (frontmatter_meta.folder); else taxonomy default. A title-match hit below
+        # overrides this with the existing note's real folder/path (UPDATE wins).
+        folder = _spec_folder(spec, taxonomy)
+        path = _portable_path(folder, title)
 
         if title:
             hits = vault_index.search(vault_path, title, limit=_SEARCH_LIMIT)
