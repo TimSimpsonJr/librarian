@@ -1,6 +1,6 @@
 # Librarian auto-pull acceptance test (Task 1.6)
 
-> **Status: prepared, pending a live run on a clean Claude Code profile.**
+> **Status: RUN 2026-06-04 -- see "Record the result" below. Install works after a marketplace fix (github -> url plugin sources); Librarian does NOT auto-pull, mitigated with a visible required-dependency note.**
 > This step cannot be executed from inside a working session — it needs a real
 > install on a fresh profile. The dependency declarations are all in place (see
 > "Preconditions"); run the steps below and record the result at the bottom.
@@ -67,8 +67,12 @@ the fallback in the research-workflow README.
 
 ## Record the result here
 
-- Date run:
-- Scenario A (fieldwork install) auto-pulled librarian:  yes / no
-- Scenario B (standalone) auto-pulled librarian:          yes / no / n-a (no standalone marketplace)
-- Co-install fallback needed:                             yes / no
+- Date run: 2026-06-04
+- Scenario A (fieldwork install) auto-pulled librarian:  **NO** (magpie installed fine; its librarian dependency was simply not auto-pulled)
+- Scenario B (standalone) auto-pulled librarian:          **n-a** -- research-workflow installs via the fieldwork marketplace; a true standalone test needs the unmerged wire-librarian-dependency branch
+- Co-install fallback needed:                             **YES** -- co-install Librarian manually from the fieldwork marketplace
 - Notes:
+  - **Install bug found + fixed first.** Initially ALL fieldwork plugins failed to install. The marketplace declared plugins with the `github` plugin-source type (`{ "source": "github", "repo": "..." }`) which, though valid per the docs, does not resolve at install in Claude Code Desktop. Fixed by switching all four to `url` sources (full `.git` URLs) in `fieldwork-plugins/.claude-plugin/marketplace.json` (bumped to v2.0.1). Plugins then installed.
+  - **Auto-pull does not fire here.** After the fix, magpie installed cleanly but its declared `librarian` dependency did NOT auto-install, even though both are in the same `fieldwork` marketplace. Same-marketplace dependency auto-pull is not reliable in Claude Code Desktop in this environment.
+  - **Decision (2026-06-04):** auto-pull is not fixable here and does not need to be. Mitigation: magpie's marketplace description now states it requires Librarian and to install it from the same marketplace (v2.0.2). The co-install fallback is the supported path; no `autonomous-safe` issue filed (not pursuing an auto-pull fix).
+  - **Deferred:** the functional check (magpie writing findings through Librarian's notes layer) needs a fresh session — newly-installed plugins are not active until reload.
