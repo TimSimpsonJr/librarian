@@ -1,0 +1,31 @@
+{
+  "_comment": "EDITABLE EXAMPLE. This is Librarian's neutral default taxonomy. It ships with a generic, investigation-neutral content-type vocabulary so a fresh install produces sane notes with zero configuration. Domain-specific vocabularies are USER OVERRIDES, not shipped values: copy this file to taxonomy.json and replace `content_types`, `tag_order`, `folder_conventions.folder_map`, etc. with your own. No domain-specific strings (place names, vendor names, subject-matter tags) belong in this shipped example, which is enforced by a neutrality test over this file's text. Per references/prior-art.md Coupling 3, the classify agent and skills/librarian/SKILL.md READ these values instead of hardcoding an enum; partial overrides are merged over these defaults by scripts/taxonomy.py load_taxonomy().",
+
+  "content_types": [
+    "report",
+    "reference",
+    "entity",
+    "event",
+    "dataset",
+    "analysis",
+    "timeline",
+    "index",
+    "source",
+    "note"
+  ],
+
+  "tag_order": ["content-type", "location", "domain"],
+
+  "tag_limit": { "min": 2, "max": 5 },
+
+  "default_folder": "Inbox",
+
+  "folder_conventions": {
+    "pattern": "{folder}/{slug}.md",
+    "folder_map": {}
+  },
+
+  "frontmatter_fields": ["title", "tags", "source", "created"],
+
+  "moc_pattern": "^_|MOC|Index|Hub"
+}
