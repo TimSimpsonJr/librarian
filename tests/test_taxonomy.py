@@ -174,6 +174,64 @@ def test_folder_defaults_to_taxonomy_default_when_absent():
     assert norm["folder"] == "Inbox"
 
 
+@pytest.mark.parametrize(
+    "bad_folder",
+    [
+        "../outside",
+        "../../etc/passwd",
+        "/etc",
+        r"C:\Windows\system32",
+        "a/../../b",
+        "Cases/../../../x",
+    ],
+)
+def test_absolute_or_traversal_folder_warns_but_does_not_drop(bad_folder):
+    """Codex re-review fix: an absolute / '..' folder is flagged (lead), not rejected.
+
+    The hard guarantee lives in scripts.vault_mode (placements can't escape the base);
+    here the validator must SURFACE that the placement will be sanitized — emit a
+    warning, still normalize the spec, and keep the raw folder on the normalized record
+    (vault_mode does the neutering downstream).
+    """
+    tax = load_taxonomy()
+    specs = [
+        {
+            "title": "Adversarial Placement",
+            "frontmatter_meta": {"folder": bad_folder, "tags": ["report", "x"]},
+            "priority": "primary",
+            "action": "create",
+        }
+    ]
+
+    result = validate_note_specs(specs, tax)
+
+    # Not dropped: exactly one normalized record comes through.
+    assert len(result["normalized"]) == 1
+    # ...and a warning flags the unsafe folder for the caller.
+    assert any(
+        "folder" in w and ("absolute" in w or ".." in w) for w in result["warnings"]
+    ), result["warnings"]
+
+
+def test_benign_folder_emits_no_traversal_warning():
+    """A benign 'Cases/2024' folder must NOT trip the absolute/'..' warning."""
+    tax = load_taxonomy()
+    specs = [
+        {
+            "title": "Benign Placement",
+            "frontmatter_meta": {"folder": "Cases/2024", "tags": ["report", "x"]},
+            "priority": "primary",
+            "action": "create",
+        }
+    ]
+
+    result = validate_note_specs(specs, tax)
+
+    assert result["warnings"] == [], result["warnings"]
+    [norm] = result["normalized"]
+    assert norm["folder"] == "Cases/2024"
+
+
 def test_invalid_priority_is_defaulted_and_warned():
     tax = load_taxonomy()
     specs = [

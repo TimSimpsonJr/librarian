@@ -25,7 +25,7 @@ from pathlib import Path
 import pytest
 
 from scripts.taxonomy import load_taxonomy
-from scripts.vault_mode import resolve_notes
+from scripts.vault_mode import _safe_relative_folder, resolve_notes
 
 
 # --------------------------------------------------------------------------- #
@@ -388,6 +388,191 @@ def test_vault_mode_refreshes_index_before_search(vault: Path):
     assert any(
         e["target_title"] == "Fusion Center Data Sharing" for e in vault_links
     ), "index must be refreshed internally so a just-added note is found"
+
+
+# --------------------------------------------------------------------------- #
+# Codex re-review fix: classifier folder is UNTRUSTED — placements can't escape
+# the base via path traversal (../, absolute, drive-letter, embedded ..).
+# --------------------------------------------------------------------------- #
+
+# Folders a crafted/LLM-produced frontmatter_meta could carry. Each MUST be
+# neutered so the returned placement path stays under the base/out_dir. The folder
+# can come from an LLM classifier over adversarial FOIA content, so this is a real
+# path-injection vector, not a theoretical one.
+_TRAVERSAL_FOLDERS = [
+    "../outside",
+    "../../etc/passwd",
+    "/etc",
+    r"C:\Windows\system32",
+    "a/../../b",
+    "Cases/../../../x",
+]
+
+
+def _assert_under_base(base: Path, placement_path: str) -> None:
+    """Assert a returned placement path stays strictly under ``base``.
+
+    The path must be RELATIVE (no leading separator, no drive letter) and, once
+    joined under ``base`` and resolved, must not climb above ``base`` — i.e. a
+    crafted ``..``/absolute folder cannot escape the intended directory.
+    """
+    p = Path(placement_path)
+    # Relative: no anchor (drive/root). An absolute or drive-letter path would have one.
+    assert not p.is_absolute(), f"placement path must be relative, got {placement_path!r}"
+    assert p.drive == "", f"placement path must carry no drive letter, got {placement_path!r}"
+    # And it must resolve to somewhere INSIDE the base, never above it.
+    base_resolved = base.resolve()
+    joined = (base / p).resolve()
+    assert joined == base_resolved or base_resolved in joined.parents, (
+        f"placement path {placement_path!r} escapes base {base}"
+    )
+
+
+@pytest.mark.parametrize("folder", _TRAVERSAL_FOLDERS)
+def test_portable_traversal_folder_cannot_escape_base(tmp_path: Path, folder: str):
+    """Portable: a traversal frontmatter_meta['folder'] stays under the out_dir base."""
+    tax = load_taxonomy()
+    specs = [
+        {
+            "title": "Adversarial Placement",
+            "content": "x",
+            "frontmatter_meta": {"folder": folder},
+            "link_hints": [],
+        }
+    ]
+
+    result = resolve_notes(specs, taxonomy=tax)
+
+    placement = result["placements"][0]
+    # Both the path AND the stored folder must be safe/in-base relative.
+    _assert_under_base(tmp_path, placement["path"])
+    _assert_under_base(tmp_path, placement["folder"])
+
+
+@pytest.mark.parametrize("folder", _TRAVERSAL_FOLDERS)
+def test_vault_create_traversal_folder_cannot_escape_base(vault: Path, folder: str):
+    """Vault create/no-match: a traversal folder stays under the vault base.
+
+    Uses a title with no seeded match so the CREATE/no-match branch (which honors the
+    classifier folder) runs — the branch the fix sanitizes. The UPDATE branch adopts
+    an existing note's real folder and is intentionally left alone.
+    """
+    tax = load_taxonomy()
+    specs = [
+        {
+            "title": "Totally New Unseeded Subject",  # no seeded note -> create branch
+            "content": "x",
+            "frontmatter_meta": {"folder": folder},
+            "link_hints": [],
+        }
+    ]
+
+    result = resolve_notes(
+        specs, vault_context={"vault_path": str(vault)}, taxonomy=tax
+    )
+
+    placement = result["placements"][0]
+    assert placement["action"] == "create"
+    # Placement path/folder resolve under the vault base, not above it.
+    _assert_under_base(vault, placement["path"])
+    _assert_under_base(vault, placement["folder"])
+
+
+def test_traversal_folder_examples_before_after(tmp_path: Path):
+    """Spot-check the exact sanitized values for a couple of representative folders.
+
+    Documents the rule concretely: ``../outside`` -> ``outside`` (the upward step is
+    dropped), and ``a/../../b`` -> ``a/b`` (both ``..`` components dropped, real
+    components kept). The derived path is the sanitized folder + slug.
+    """
+    tax = load_taxonomy()
+    specs = [
+        {
+            "title": "Memo One",
+            "content": "x",
+            "frontmatter_meta": {"folder": "../outside"},
+            "link_hints": [],
+        },
+        {
+            "title": "Memo Two",
+            "content": "x",
+            "frontmatter_meta": {"folder": "a/../../b"},
+            "link_hints": [],
+        },
+    ]
+
+    placements = {p["title"]: p for p in resolve_notes(specs, taxonomy=tax)["placements"]}
+
+    # ../outside -> outside  (leading ".." dropped, leaving the real component)
+    assert placements["Memo One"]["folder"] == "outside"
+    assert placements["Memo One"]["path"] == "outside/memo-one.md"
+    # a/../../b -> a/b  (both ".." dropped; "a" and "b" survive)
+    assert placements["Memo Two"]["folder"] == "a/b"
+    assert placements["Memo Two"]["path"] == "a/b/memo-two.md"
+
+
+def test_benign_classifier_folder_still_routes_unchanged(tmp_path: Path):
+    """A benign 'Cases/2024' folder is preserved verbatim (sanitization is a no-op)."""
+    tax = load_taxonomy()
+    specs = [
+        {
+            "title": "Smith Deposition Summary",
+            "content": "x",
+            "frontmatter_meta": {"folder": "Cases/2024"},
+            "link_hints": [],
+        }
+    ]
+
+    placement = resolve_notes(specs, taxonomy=tax)["placements"][0]
+
+    assert placement["folder"] == "Cases/2024"
+    assert placement["path"] == "Cases/2024/smith-deposition-summary.md"
+
+
+def test_all_traversal_folder_falls_back_to_default(tmp_path: Path):
+    """A folder with NOTHING usable left after sanitizing falls back to the default.
+
+    ``../..`` is entirely upward-traversal; once both ``..`` are dropped nothing
+    remains, so placement uses the taxonomy default folder (``Inbox``) rather than the
+    base root.
+    """
+    tax = load_taxonomy()  # default_folder == "Inbox"
+    specs = [
+        {
+            "title": "Nowhere Note",
+            "content": "x",
+            "frontmatter_meta": {"folder": "../.."},
+            "link_hints": [],
+        }
+    ]
+
+    placement = resolve_notes(specs, taxonomy=tax)["placements"][0]
+
+    assert placement["folder"] == "Inbox"
+    assert placement["path"] == "Inbox/nowhere-note.md"
+    _assert_under_base(tmp_path, placement["path"])
+
+
+@pytest.mark.parametrize(
+    "folder, expected",
+    [
+        ("../outside", "outside"),
+        ("../../etc/passwd", "etc/passwd"),
+        ("/etc", "etc"),
+        (r"C:\Windows\system32", "Windows/system32"),
+        ("a/../../b", "a/b"),
+        ("Cases/../../../x", "Cases/x"),
+        ("Cases/2024", "Cases/2024"),  # benign is untouched
+        ("../..", "Inbox"),  # nothing usable -> default
+        ("/", "Inbox"),  # bare root -> default
+        (r"C:\\", "Inbox"),  # bare drive -> default
+        (r"mixed\sep/path", "mixed/sep/path"),  # mixed separators normalized
+    ],
+)
+def test_safe_relative_folder_rule(folder: str, expected: str):
+    """Unit-level: the exact sanitization rule for representative inputs."""
+    tax = load_taxonomy()  # default_folder == "Inbox"
+    assert _safe_relative_folder(folder, tax) == expected
 
 
 # --------------------------------------------------------------------------- #

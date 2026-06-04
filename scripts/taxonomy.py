@@ -120,6 +120,31 @@ def _tag_limit_bounds(taxonomy: dict) -> tuple[int | None, int | None]:
     return (limit.get("min"), limit.get("max"))
 
 
+def _folder_is_unsafe(folder: str) -> bool:
+    """True if a classifier/caller folder is absolute or escapes upward via ``..``.
+
+    Detects the placements that :func:`scripts.vault_mode._safe_relative_folder` will
+    neuter so :func:`validate_note_specs` can WARN (flags-as-leads), without itself
+    enforcing anything. Normalizes Windows separators to ``/`` first, then flags:
+
+    * an absolute POSIX path (leading ``/``);
+    * a Windows drive-letter prefix (``C:``) or a leading ``\\`` (UNC/rooted), both
+      visible after normalization as a leading ``/`` or a ``X:`` first component;
+    * any ``..`` path component (upward traversal), anywhere in the folder.
+    """
+    normalized = folder.replace("\\", "/")
+    if normalized.startswith("/"):
+        return True
+    parts = normalized.split("/")
+    if ".." in parts:
+        return True
+    first = parts[0] if parts else ""
+    # A drive-letter prefix like "C:" or "C:foo" anchors an absolute Windows path.
+    if len(first) >= 2 and first[1] == ":" and first[0].isalpha():
+        return True
+    return False
+
+
 def _coerce_meta(spec: dict, index: int, warnings: list[str]) -> dict:
     """Return ``spec['frontmatter_meta']`` as a dict, tolerating a non-dict value.
 
@@ -170,7 +195,10 @@ def validate_note_specs(specs: list[dict], taxonomy: dict) -> dict:
     * defaults ``priority`` to ``"secondary"`` and ``action`` to ``"create"`` when
       absent or invalid (warning on an INVALID — but not a merely absent — value);
     * resolves ``folder`` from ``frontmatter_meta.folder`` if present, else from
-      ``taxonomy['default_folder']``;
+      ``taxonomy['default_folder']``; warns (does NOT raise or drop) when that folder
+      is absolute or contains a ``..`` component — a lead that the downstream router
+      (:func:`scripts.vault_mode._safe_relative_folder`) will sanitize to a safe
+      in-base subpath;
     * warns (does NOT reject) when the content-type tag is not in
       ``taxonomy['content_types']`` — per design, a flag is a lead, not a verdict;
     * warns when the tag count falls outside ``taxonomy['tag_limit']``.
@@ -229,6 +257,16 @@ def validate_note_specs(specs: list[dict], taxonomy: dict) -> dict:
         folder = meta.get("folder")
         if not (isinstance(folder, str) and folder):
             folder = default_folder
+        elif _folder_is_unsafe(folder):
+            # Flags-as-leads: an absolute path or a ".." component is a placement the
+            # downstream router (scripts.vault_mode._safe_relative_folder) will neuter
+            # to a safe in-base subpath. Surface it so the caller sees the placement
+            # was sanitized — but DON'T raise or drop (the hard guarantee lives in
+            # vault_mode; this validator never enforces filesystem safety itself).
+            warnings.append(
+                f"spec[{index}]: folder {folder!r} is absolute or contains '..'; "
+                f"placement will be sanitized to a safe relative subpath"
+            )
 
         # --- content type: warn (lead, not verdict) if outside the vocabulary ---
         ctype = _content_type_tag(meta)

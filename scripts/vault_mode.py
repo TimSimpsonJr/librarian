@@ -94,6 +94,48 @@ def _default_folder(taxonomy: dict) -> str:
     return taxonomy.get("default_folder") or DEFAULT_TAXONOMY["default_folder"]
 
 
+def _safe_relative_folder(folder: str, taxonomy: dict) -> str:
+    """Turn a caller/classifier folder into a SAFE RELATIVE subpath under the base.
+
+    The ``folder`` may originate from an LLM classifier running over adversarial FOIA
+    content (see ``agents/classify-agent.md``), so it is UNTRUSTED: a value like
+    ``../outside``, ``../../etc/passwd``, ``/etc``, ``C:\\Windows\\system32`` or
+    ``a/../../b`` must never let a returned placement path escape the intended base
+    (``out_dir`` in portable mode, the vault root in vault mode). This is the hard
+    guarantee — :func:`scripts.taxonomy.validate_note_specs` only *flags* such folders.
+
+    Sanitization rule (defense in depth — neuter, don't trust):
+
+    * Split on BOTH ``/`` and ``\\`` so a Windows-style separator can't smuggle a
+      component past a POSIX-only split.
+    * Strip a Windows drive-letter prefix (e.g. ``C:``) from any component.
+    * Drop empty components, ``.``, and ``..`` — this is what defeats upward
+      traversal; a leading separator (absolute path) simply yields a leading empty
+      component that is dropped, so absolute paths become relative.
+    * Re-join the survivors with forward slashes.
+
+    If nothing usable survives (the folder was entirely traversal/separators, e.g.
+    ``../..`` or ``/``), fall back to the taxonomy default folder so the note still
+    lands somewhere sane under the base rather than at the base root by accident.
+    """
+    components: list[str] = []
+    # Normalize Windows separators to POSIX, then split — handles mixed a\b/c too.
+    for raw in folder.replace("\\", "/").split("/"):
+        component = raw.strip()
+        # Strip a drive-letter prefix like "C:" (or "C:foo") so it can't anchor a path.
+        if len(component) >= 2 and component[1] == ":" and component[0].isalpha():
+            component = component[2:]
+        if not component or component in (".", ".."):
+            # Empty (leading/trailing/duplicate separator, absolute-path leading "/"),
+            # current-dir ".", or upward "..": all dropped so the path stays in-base.
+            continue
+        components.append(component)
+
+    if not components:
+        return _default_folder(taxonomy)
+    return "/".join(components)
+
+
 def _spec_folder(spec: dict, taxonomy: dict) -> str:
     """Folder the classifier/validator chose for this note, else the taxonomy default.
 
@@ -104,12 +146,19 @@ def _spec_folder(spec: dict, taxonomy: dict) -> str:
     ``agents/classify-agent.md``). Mirrors the validator's tolerance: a non-dict
     ``frontmatter_meta`` (or a missing/blank/non-str ``folder``) falls back to the
     default rather than crashing.
+
+    The chosen folder is UNTRUSTED (LLM-/caller-supplied) and is passed through
+    :func:`_safe_relative_folder` so a traversal value (``../outside``, ``/etc``,
+    ``C:\\Windows``, ``a/../../b``) cannot escape the base — every placement path this
+    feeds (portable ``<folder>/<slug>.md`` and the vault create/no-match path) stays
+    under ``out_dir``/the vault root. The vault UPDATE path does not use this value (it
+    adopts the existing note's real folder), so adopted real folders are untouched.
     """
     meta = spec.get("frontmatter_meta")
     if isinstance(meta, dict):
         folder = meta.get("folder")
         if isinstance(folder, str) and folder:
-            return folder
+            return _safe_relative_folder(folder, taxonomy)
     return _default_folder(taxonomy)
 
 
@@ -135,7 +184,8 @@ def _resolve_portable(specs: list[dict], taxonomy: dict) -> dict:
     for spec in specs:
         title = _spec_title(spec)
         batch_titles.add(title)
-        # Honor the classifier-selected folder (frontmatter_meta.folder); else default.
+        # Honor the classifier-selected folder (frontmatter_meta.folder), sanitized to
+        # a safe in-base relative subpath; else the taxonomy default.
         folder = _spec_folder(spec, taxonomy)
         placements.append(
             {
@@ -211,8 +261,10 @@ def _resolve_vault(specs: list[dict], taxonomy: dict, vault_context: dict) -> di
         title = _spec_title(spec)
         action = _spec_action(spec)
         # CREATE / no-match default: honor the classifier-selected folder
-        # (frontmatter_meta.folder); else taxonomy default. A title-match hit below
-        # overrides this with the existing note's real folder/path (UPDATE wins).
+        # (frontmatter_meta.folder), sanitized to a safe in-base relative subpath;
+        # else taxonomy default. A title-match hit below overrides this with the
+        # existing note's real folder/path (UPDATE wins, and is left un-sanitized
+        # because it is the vault's own real folder, not caller input).
         folder = _spec_folder(spec, taxonomy)
         path = _portable_path(folder, title)
 
