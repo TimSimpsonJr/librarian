@@ -230,7 +230,11 @@ def validate_note_specs(specs: list[dict], taxonomy: dict) -> dict:
             {
                 "title": title,
                 "content": spec.get("content", ""),
-                "frontmatter_meta": meta,
+                # Shallow-copy so the normalized record does NOT alias the caller's
+                # input `frontmatter_meta`; a caller mutating the normalized copy must
+                # not reach back into their input spec (see docstring "returns new
+                # dicts, mutating neither argument").
+                "frontmatter_meta": dict(meta),
                 "citations": spec.get("citations", []),
                 "link_hints": spec.get("link_hints", []),
                 "priority": priority,

@@ -1,33 +1,34 @@
 ---
 name: classify-agent
-description: Use this agent to STRUCTURE incoming findings/summaries into note specs in Librarian's neutral input contract — it maps each item to a content type, tags, citations, link hints, priority, and placement, reading the content-type vocabulary and tag/folder conventions from a supplied taxonomy config (not a hardcoded enum). Portable-first: it queries a vault index ONLY when a `vault_context` is supplied. Output is a single JSON object with a `notes_to_create[]` array. Works from summaries (not full content) for token efficiency, so it is Haiku-able. Examples:
+description: |-
+  Use this agent to STRUCTURE incoming findings/summaries into note specs in Librarian's neutral input contract — it maps each item to a content type, tags, citations, link hints, priority, and placement, reading the content-type vocabulary and tag/folder conventions from a supplied taxonomy config (not a hardcoded enum). Portable-first: it queries a vault index ONLY when a `vault_context` is supplied. Output is a single JSON object with a `notes_to_create[]` array. Works from summaries (not full content) for token efficiency, so it is Haiku-able. Examples:
 
-<example>
-Context: A research or extraction pass has produced a batch of source summaries that need to be filed as structured notes.
-user: "Here are 6 summaries from today's pass — classify them into notes."
-assistant: "I'll dispatch the classify-agent with the summaries and the taxonomy config (no vault configured, so portable mode). It will return a notes_to_create[] array I can validate and write."
-<commentary>
-The work is mapping summaries to note specs (content type, tags, placement) — exactly this agent's job. No vault_context is supplied, so the agent skips the index query and defaults action to create.
-</commentary>
-</example>
+  <example>
+  Context: A research or extraction pass has produced a batch of source summaries that need to be filed as structured notes.
+  user: "Here are 6 summaries from today's pass — classify them into notes."
+  assistant: "I'll dispatch the classify-agent with the summaries and the taxonomy config (no vault configured, so portable mode). It will return a notes_to_create[] array I can validate and write."
+  <commentary>
+  The work is mapping summaries to note specs (content type, tags, placement) — exactly this agent's job. No vault_context is supplied, so the agent skips the index query and defaults action to create.
+  </commentary>
+  </example>
 
-<example>
-Context: The user has an Obsidian vault configured and wants new findings filed so they update existing notes where they match.
-user: "File these findings into my vault and update existing notes if they already exist."
-assistant: "I'll dispatch the classify-agent with the findings, the taxonomy config, AND the vault_context so it queries the vault index to route update-vs-create and resolve folders."
-<commentary>
-A vault_context is present, so the agent runs its conditional Query Vault Index step to discover existing notes and set action: update with a target path.
-</commentary>
-</example>
+  <example>
+  Context: The user has an Obsidian vault configured and wants new findings filed so they update existing notes where they match.
+  user: "File these findings into my vault and update existing notes if they already exist."
+  assistant: "I'll dispatch the classify-agent with the findings, the taxonomy config, AND the vault_context so it queries the vault index to route update-vs-create and resolve folders."
+  <commentary>
+  A vault_context is present, so the agent runs its conditional Query Vault Index step to discover existing notes and set action: update with a target path.
+  </commentary>
+  </example>
 
-<example>
-Context: The user wants a blog post drafted from their research.
-user: "Turn this research into a published blog post."
-assistant: "That's outward-facing prose — Prose Craft handles that, not the classify-agent."
-<commentary>
-This agent structures INTERNAL findings notes. It must not be used for outward-facing prose; Librarian and Prose Craft never cross-trigger.
-</commentary>
-</example>
+  <example>
+  Context: The user wants a blog post drafted from their research.
+  user: "Turn this research into a published blog post."
+  assistant: "That's outward-facing prose — Prose Craft handles that, not the classify-agent."
+  <commentary>
+  This agent structures INTERNAL findings notes. It must not be used for outward-facing prose; Librarian and Prose Craft never cross-trigger.
+  </commentary>
+  </example>
 model: haiku
 color: cyan
 tools:

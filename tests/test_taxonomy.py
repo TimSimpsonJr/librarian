@@ -208,3 +208,38 @@ def test_tag_count_outside_limit_warns():
 
     assert len(result["normalized"]) == 1  # not rejected
     assert any("tag" in w.lower() for w in result["warnings"])
+
+
+def test_normalized_frontmatter_meta_does_not_alias_input():
+    """The normalized record's frontmatter_meta must be a COPY, not the input object.
+
+    The docstring promises new dicts that mutate neither argument. The fix is a shallow
+    ``dict(meta)`` copy, so this guards the contract that copy promises: the normalized
+    record's frontmatter_meta is a DISTINCT dict, and rebinding/adding/removing its
+    top-level keys does not reach back into the caller's input spec (regression: the two
+    used to be the same object, so every such edit bled through).
+    """
+    tax = load_taxonomy()
+    spec = {
+        "title": "Aliasing Guard",
+        "frontmatter_meta": {"tags": ["report", "x"], "folder": "Reports"},
+        "priority": "primary",
+        "action": "create",
+    }
+
+    [norm] = validate_note_specs([spec], tax)["normalized"]
+
+    # Distinct objects, not an alias.
+    assert norm["frontmatter_meta"] is not spec["frontmatter_meta"]
+    # Equal in value at the point of normalization.
+    assert norm["frontmatter_meta"] == spec["frontmatter_meta"]
+
+    # Top-level edits on the normalized copy must NOT bleed into the input spec:
+    # add a new key, rebind an existing key, and drop a key.
+    norm["frontmatter_meta"]["injected"] = True
+    norm["frontmatter_meta"]["tags"] = ["replaced"]
+    del norm["frontmatter_meta"]["folder"]
+
+    assert "injected" not in spec["frontmatter_meta"]
+    assert spec["frontmatter_meta"]["tags"] == ["report", "x"]
+    assert spec["frontmatter_meta"]["folder"] == "Reports"
