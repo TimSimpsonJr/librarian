@@ -265,26 +265,62 @@ def update_index(vault_root: Path) -> dict:
     return stats
 
 
+def _query_tokens(query: str) -> list[str]:
+    """Extract bare word tokens from arbitrary (untrusted) query text.
+
+    The index is searched with text that originates from note titles and link
+    hints — i.e. FOIA-grade adversarial strings like ``Smith v. Jones (2020)``,
+    ``Acme OR Globex``, or ``NEAR(camera budget)``. ``re.findall(r"\\w+")`` keeps
+    ONLY alphanumeric/underscore runs (Unicode-aware), discarding every byte that
+    FTS5 could interpret as syntax (quotes, parens, ``*``, ``^``, ``:``, ``-``,
+    ``+`` …). The result feeds both the FTS5 and LIKE paths so the two backends
+    tokenize identically.
+    """
+    return re.findall(r"\w+", query, re.UNICODE)
+
+
 def _prepare_query(query: str) -> str:
-    """Add prefix matching to each FTS term for broader recall (``term*``)."""
-    tokens = query.strip().split()
-    return " ".join(f"{t}*" for t in tokens if t)
+    """Build a crash-proof FTS5 MATCH expression from untrusted text.
+
+    Each word token is emitted as a *quoted FTS5 string* with a trailing prefix
+    operator — ``"<tok>"*`` — with any internal double-quote doubled per FTS5's
+    string-literal rules. Quoting neutralizes FTS5 keywords (``AND``/``OR``/
+    ``NOT``/``NEAR``) and punctuation to LITERAL terms, so no input can form an
+    operator, an unbalanced quote, or a bare column filter. The space-joined terms
+    keep FTS5's implicit-AND semantics (matching research-workflow's behavior).
+
+    Returns ``""`` when no usable word token remains; callers treat that as a
+    no-op query (``[]``) rather than passing an empty/invalid MATCH to sqlite.
+
+    Example: ``Acme OR Globex`` -> ``"Acme"* "OR"* "Globex"*`` (the ``OR`` is a
+    literal term, not the FTS5 OR operator).
+    """
+    parts = []
+    for tok in _query_tokens(query):
+        escaped = tok.replace('"', '""')
+        parts.append(f'"{escaped}"*')
+    return " ".join(parts)
 
 
 def _search_fts(conn: sqlite3.Connection, query: str, limit: int) -> list[dict]:
     prepared = _prepare_query(query)
     if not prepared:
         return []
-    rows = conn.execute(
-        """SELECT n.path, n.title, n.tags, n.excerpt,
-                  bm25(notes_fts, 10.0, 5.0, 1.0) AS rank
-           FROM notes_fts f
-           JOIN notes n ON n.rowid = f.rowid
-           WHERE notes_fts MATCH ?
-           ORDER BY rank
-           LIMIT ?""",
-        (prepared, limit),
-    ).fetchall()
+    try:
+        rows = conn.execute(
+            """SELECT n.path, n.title, n.tags, n.excerpt,
+                      bm25(notes_fts, 10.0, 5.0, 1.0) AS rank
+               FROM notes_fts f
+               JOIN notes n ON n.rowid = f.rowid
+               WHERE notes_fts MATCH ?
+               ORDER BY rank
+               LIMIT ?""",
+            (prepared, limit),
+        ).fetchall()
+    except sqlite3.OperationalError:
+        # Safety net: no MATCH expression may crash the batch regardless of any
+        # residual FTS5 edge. Fall back to the FTS5-free LIKE scan for this query.
+        return _search_like(conn, query, limit)
     return [dict(r) for r in rows]
 
 
@@ -294,8 +330,13 @@ def _search_like(conn: sqlite3.Connection, query: str, limit: int) -> list[dict]
     Same public hit shape as the FTS path. ``rank`` is a NEGATED match score (more
     matched terms / a title hit => more negative) so the shared ``ORDER BY rank
     ASC`` orders best-first exactly like bm25's smaller-is-better convention.
+
+    Tokenizes with the SAME word-extraction as the FTS path (``_query_tokens``)
+    so the two backends agree on token boundaries and neither is fooled by
+    punctuation in untrusted query text. Matching is plain Python substring
+    containment, so adversarial input can never crash this path.
     """
-    tokens = [t for t in query.strip().split() if t]
+    tokens = _query_tokens(query)
     if not tokens:
         return []
     rows = conn.execute(
@@ -366,12 +407,20 @@ def list_notes(vault_root: Path) -> list[dict]:
 
 
 def note_exists(vault_root: Path, title: str) -> bool:
-    """True if a note with EXACTLY this title is indexed (case-sensitive)."""
+    """True if a note with this title is indexed (case-INSENSITIVE).
+
+    Case-insensitive on purpose: the vault-mode matcher
+    (``vault_mode._best_title_match``) compares titles case-insensitively, so a
+    future caller using ``note_exists`` as a dedup guard agrees with what
+    ``resolve_notes`` would actually route as an update. ``COLLATE NOCASE`` applies
+    in both backends (this queries the base ``notes`` table, which exists with or
+    without FTS5).
+    """
     vault_root = Path(vault_root)
     conn = _connect(vault_root)
     try:
         row = conn.execute(
-            "SELECT 1 FROM notes WHERE title = ? LIMIT 1", (title,)
+            "SELECT 1 FROM notes WHERE title = ? COLLATE NOCASE LIMIT 1", (title,)
         ).fetchone()
     finally:
         conn.close()

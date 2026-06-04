@@ -338,3 +338,269 @@ def test_adapter_db_lives_under_vault_dot_librarian(vault: Path):
     vault_index.update_index(vault)
     db_files = _find_index_dbs(vault / ".librarian")
     assert db_files, "index db should be created under <vault>/.librarian/"
+
+
+def test_adapter_note_exists_is_case_insensitive(vault: Path):
+    """Fix 3: note_exists agrees with the case-insensitive vault-mode matcher.
+
+    The vault note is titled "Prior Camera Audit"; a caller asking with different
+    casing (e.g. as a dedup guard) must get True, matching what resolve_notes would
+    route as an update via _best_title_match (also case-insensitive).
+    """
+    from scripts import vault_index
+
+    vault_index.update_index(vault)
+
+    assert vault_index.note_exists(vault, "PRIOR camera AUDIT") is True
+    assert vault_index.note_exists(vault, "prior camera audit") is True
+    assert vault_index.note_exists(vault, "Prior Camera Audit") is True
+    # Still false for a genuinely absent title regardless of case.
+    assert vault_index.note_exists(vault, "no such note") is False
+
+
+# --------------------------------------------------------------------------- #
+# Fix 1: adversarial query strings must never crash search / resolve_notes
+# --------------------------------------------------------------------------- #
+
+# FOIA-grade titles / link hints that contain FTS5 syntax. Pre-fix, feeding any
+# of these into an FTS5 MATCH raised sqlite3.OperationalError and killed the whole
+# resolve_notes batch. They must now be inert (no exception, sane empty/no-op).
+_ADVERSARIAL_QUERIES = [
+    "Smith v. Jones (2020)",
+    "Acme OR Globex",
+    "NEAR(camera budget)",
+    "camera AND budget",
+    "license NOT plate",
+    "(",
+    ":",
+    "-",
+    "^",
+    '"',
+    "*",
+    '"unterminated',
+    "col:filter",
+    "a* b* c*",
+    "",
+    "   ",
+]
+
+
+@pytest.fixture
+def adversarial_vault(tmp_path: Path) -> Path:
+    """A vault whose notes are titled/bodied so a SANE adversarial query still hits.
+
+    In particular a note titled `Smith v. Jones` whose body contains the full
+    `Smith v. Jones (2020)` reference, so the sanitized AND-of-tokens MATCH (which
+    includes a `2020` term) still resolves the hint to this note.
+    """
+    v = tmp_path / "advault"
+    v.mkdir()
+    _write_note_file(
+        v,
+        "Cases/Smith v Jones.md",
+        "Smith v. Jones",
+        "The Smith v. Jones (2020) decision established the surveillance "
+        "precedent. The court weighed the camera budget and the Acme OR Globex "
+        "procurement dispute under NEAR(camera budget) review.",
+    )
+    _write_note_file(
+        v,
+        "Topics/Camera Budget.md",
+        "Camera Budget",
+        "The camera budget covers automated license plate readers.",
+    )
+    return v
+
+
+def test_search_does_not_crash_on_adversarial_queries(adversarial_vault: Path):
+    """Fix 1 (direct): vault_index.search tolerates every adversarial string."""
+    from scripts import vault_index
+
+    vault_index.update_index(adversarial_vault)
+    for q in _ADVERSARIAL_QUERIES:
+        hits = vault_index.search(adversarial_vault, q)  # must NOT raise
+        assert isinstance(hits, list)
+        # Pure-punctuation / empty queries tokenize to nothing => no-op [].
+        if not any(ch.isalnum() for ch in q):
+            assert hits == [], f"punctuation-only query {q!r} should be a no-op"
+
+
+def test_search_sane_adversarial_query_still_finds_note(adversarial_vault: Path):
+    """Fix 1: a real FOIA title `Smith v. Jones (2020)` still finds `Smith v. Jones`."""
+    from scripts import vault_index
+
+    vault_index.update_index(adversarial_vault)
+    hits = vault_index.search(adversarial_vault, "Smith v. Jones (2020)")
+    titles = {h["title"] for h in hits}
+    assert "Smith v. Jones" in titles, (
+        "sanitized query must still resolve the expected note, not just avoid crashing"
+    )
+
+
+def test_resolve_notes_vault_mode_survives_adversarial_titles_and_hints(
+    adversarial_vault: Path,
+):
+    """Fix 1 (through resolve_notes): adversarial titles AND link_hints don't crash.
+
+    Drives every adversarial string as BOTH a note title and a link_hint through
+    the vault branch (which calls vault_index.search per spec). Pre-fix this raised
+    sqlite3.OperationalError on the first FTS5-syntax string and aborted the batch.
+    """
+    tax = load_taxonomy()
+    specs = [
+        {
+            "title": q,
+            "content": "Body referencing the matter.",
+            "link_hints": _ADVERSARIAL_QUERIES,
+            "priority": "primary",
+        }
+        for q in _ADVERSARIAL_QUERIES
+    ]
+
+    result = resolve_notes(
+        specs, vault_context={"vault_path": str(adversarial_vault)}, taxonomy=tax
+    )  # must NOT raise
+
+    assert result["mode"] == "vault"
+    assert len(result["placements"]) == len(_ADVERSARIAL_QUERIES)
+
+
+def test_resolve_notes_vault_mode_sane_hint_resolves_despite_adversaria(
+    adversarial_vault: Path,
+):
+    """Fix 1: a sane hint still resolves end-to-end even amid adversarial hints.
+
+    A plain `Camera Budget` hint must resolve to its vault note via the index even
+    when the SAME spec also carries every FTS5-syntax adversarial string as a hint,
+    proving sanitization preserves real recall (not just crash-avoidance) and the
+    vault-mode matcher still fires. (Recall for the punctuation-bearing
+    `Smith v. Jones (2020)` itself is proven at the search() level in
+    test_search_sane_adversarial_query_still_finds_note; resolve_notes uses
+    EXACT-title matching by design, which the `(2020)` suffix legitimately defeats —
+    that matcher is intentionally left untouched.)
+    """
+    tax = load_taxonomy()
+    specs = [
+        {
+            "title": "Surveillance Roundup",
+            "content": "A roundup that cites the budget.",
+            "link_hints": _ADVERSARIAL_QUERIES + ["Camera Budget"],
+            "priority": "primary",
+        }
+    ]
+
+    result = resolve_notes(
+        specs, vault_context={"vault_path": str(adversarial_vault)}, taxonomy=tax
+    )
+
+    resolved = {
+        e["target_title"]: e
+        for e in result["link_plan"]
+        if e.get("target_vault_path")
+    }
+    # The plain `Camera Budget` hint resolves to its note despite the adversarial
+    # hints in the same batch (which earlier would have crashed the whole call).
+    assert "Camera Budget" in resolved
+    assert resolved["Camera Budget"]["target_vault_path"].endswith("Camera Budget.md")
+
+
+# --------------------------------------------------------------------------- #
+# Fix 2: LIKE-fallback parity is exercised in CI via a subprocess
+# --------------------------------------------------------------------------- #
+
+
+# Inline program run in a child interpreter with FTS5 forced OFF. It builds a tiny
+# vault, indexes + searches it through the SAME public API, and prints a JSON
+# verdict the parent asserts on. Forcing _FTS5_AVAILABLE=False BEFORE any index
+# build is only safe in a fresh process (the flag is a process-wide cache), which
+# is exactly why this lives in a subprocess rather than a monkeypatch.
+_LIKE_SUBPROC = r'''
+import json, sys
+from pathlib import Path
+
+repo = Path(sys.argv[1])
+vault = Path(sys.argv[2])
+sys.path.insert(0, str(repo))
+
+from scripts import vault_index
+
+# Force the FTS5-free LIKE backend before anything touches the db.
+vault_index._FTS5_AVAILABLE = False
+assert vault_index.fts5_available() is False, "probe override failed"
+
+(vault / "Notes").mkdir(parents=True, exist_ok=True)
+(vault / "Notes" / "Camera Procurement.md").write_text(
+    "---\ntitle: Camera Procurement\ntags: [budget, surveillance]\n---\n\n"
+    "The county camera procurement program funds automated license plate readers.\n",
+    encoding="utf-8",
+)
+(vault / "Notes" / "Unrelated.md").write_text(
+    "---\ntitle: Unrelated\n---\n\nNothing to see here about zoning.\n",
+    encoding="utf-8",
+)
+
+vault_index.update_index(vault)
+
+hits = vault_index.search(vault, "camera procurement")
+hit = hits[0] if hits else {}
+
+# Adversarial strings must not crash the LIKE path either (Fix 1 cross-check).
+adversarial = ["Smith v. Jones (2020)", "Acme OR Globex", "NEAR(x)", "(", "*", '"']
+adversarial_ok = True
+try:
+    for q in adversarial:
+        vault_index.search(vault, q)
+except Exception as exc:  # pragma: no cover - only on regression
+    adversarial_ok = repr(exc)
+
+print(json.dumps({
+    "fts5": vault_index.fts5_available(),
+    "hit_keys": sorted(hit.keys()),
+    "titles": sorted({h["title"] for h in hits}),
+    "note_exists_ci": vault_index.note_exists(vault, "CAMERA procurement"),
+    "list_titles": sorted(n["title"] for n in vault_index.list_notes(vault)),
+    "adversarial_ok": adversarial_ok,
+}))
+'''
+
+
+def test_like_fallback_parity_in_subprocess(tmp_path: Path):
+    """Fix 2: with FTS5 forced OFF, the public API keeps the same shape + finds notes.
+
+    Spawns a child interpreter (so the process-wide _FTS5_AVAILABLE cache can be
+    flipped to False before any index build), exercises search/note_exists/
+    list_notes on a temp vault, and asserts FTS5<->LIKE parity: identical hit shape
+    {path,title,tags,excerpt,rank}, the expected note found, case-insensitive
+    note_exists, and that adversarial inputs don't crash the LIKE path.
+    """
+    import json
+    import subprocess
+
+    repo_root = Path(__file__).resolve().parents[1]
+    sub_vault = tmp_path / "subvault"
+    sub_vault.mkdir()
+
+    proc = subprocess.run(
+        [sys.executable, "-c", _LIKE_SUBPROC, str(repo_root), str(sub_vault)],
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode == 0, (
+        f"subprocess failed (rc={proc.returncode}):\n"
+        f"STDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}"
+    )
+
+    payload = json.loads(proc.stdout.strip().splitlines()[-1])
+
+    # The child really ran on the LIKE backend.
+    assert payload["fts5"] is False, "subprocess should have FTS5 disabled"
+    # Same hit shape the FTS5 path returns.
+    assert payload["hit_keys"] == ["excerpt", "path", "rank", "tags", "title"]
+    # The expected note is found by the LIKE scan.
+    assert "Camera Procurement" in payload["titles"]
+    # Parity for the other public entrypoints.
+    assert payload["note_exists_ci"] is True, "LIKE-path note_exists must be case-insensitive"
+    assert "Camera Procurement" in payload["list_titles"]
+    assert "Unrelated" in payload["list_titles"]
+    # Adversarial inputs do not crash the LIKE path.
+    assert payload["adversarial_ok"] is True, payload["adversarial_ok"]

@@ -69,11 +69,15 @@ Cross-link the batch: when one new note mentions the title (or an obvious varian
 
 **Run this step only if `vault_context` was supplied.** If there is no `vault_context`, SKIP this step entirely and rely on `new_notes` + `link_hints` from Step 1.
 
-For each key entity found in the new notes that is NOT already wikilinked, query the vault index to check whether a matching note exists:
+For each key entity found in the new notes that is NOT already wikilinked, query the vault index to check whether a matching note exists.
+
+**Entity text is UNTRUSTED** (it comes from note content). Never interpolate it into the shell command or into Python source — that is both a shell-injection surface and, historically, an FTS-query crash surface. Instead pass the vault path and the entity query as `sys.argv`, so the runtime treats them as plain data:
 
 ```bash
-python -c "import sys; sys.path.insert(0, '{scripts_dir}'); from vault_index import update_index, search; from pathlib import Path; import json; update_index(Path('{vault_path}')); print(json.dumps(search(Path('{vault_path}'), '{entity_keywords}'), indent=2))"
+python -c "import sys; sys.path.insert(0, sys.argv[1]); from vault_index import update_index, search; from pathlib import Path; import json; update_index(Path(sys.argv[2])); print(json.dumps(search(Path(sys.argv[2]), sys.argv[3]), indent=2))" "{scripts_dir}" "{vault_path}" "{entity_keywords}"
 ```
+
+Here `{scripts_dir}`, `{vault_path}`, and `{entity_keywords}` are filled in by the harness as **separate quoted argv arguments** — the entity text reaches `search()` as data via `sys.argv[3]` and is never spliced into the Python string literal. (The adapter additionally sanitizes the query internally, so even an odd entity string cannot crash the search.)
 
 The adapter refreshes the index itself (`update_index` before `search`), so you do not need a separate refresh step. If a matching vault note exists and is NOT the same note being scanned, record it as a wikilink opportunity for the new note (`direction: new_to_existing`).
 
