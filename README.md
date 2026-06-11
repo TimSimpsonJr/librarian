@@ -10,16 +10,16 @@ It works with nothing but a folder of Markdown files, so you do not need any par
 
 ```mermaid
 flowchart TD
-    A[Incoming findings / summaries] --> B[classify-agent: structure into note specs]
-    B --> C[validate_note_specs: normalize, warn as leads]
-    C --> D{Vault configured?}
-    D -->|No, portable default| E[write_note / write_table:<br/>Markdown + CSV into a folder]
-    D -->|Yes, vault-aware| F[vault_mode.resolve_notes:<br/>place by folder conventions, route update vs create]
-    F --> G[write_note / write_table]
-    G --> H[wikilink-scanner: plan [[wikilinks]]]
-    H --> I[Apply edits + update map-of-content pages]
-    E --> J[Linked, browsable notes]
-    I --> J[Linked, browsable notes]
+    A["Incoming findings / summaries"] --> B["classify-agent<br/>structure into note specs"]
+    B --> C["validate_note_specs<br/>normalize, warn as leads"]
+    C --> D{"Vault configured?"}
+    D -->|portable default| E["write_note / write_table<br/>Markdown + CSV into a folder"]
+    D -->|vault-aware| F["vault_mode.resolve_notes<br/>place by conventions, update vs create"]
+    F --> G["write_note / write_table"]
+    G --> H["wikilink-scanner<br/>plan the wikilinks"]
+    H --> I["apply edits, update map-of-content pages"]
+    E --> J["Linked, browsable notes"]
+    I --> J
 ```
 
 The path is the same one each Fieldwork tool feeds into: classify the findings into note specs, validate them, write the notes (Markdown, plus CSV for tables), and, only when a vault is present, scan for wikilinks and refresh the index pages.
