@@ -1,6 +1,6 @@
 # Librarian
 
-![License](https://img.shields.io/badge/license-MIT-blue) ![Version](https://img.shields.io/badge/version-0.1.1-informational) ![Built for Claude Code](https://img.shields.io/badge/built%20for-Claude%20Code-8A3FFC) ![Python](https://img.shields.io/badge/python-3.12-3776AB) ![Status](https://img.shields.io/badge/status-beta-orange)
+![License](https://img.shields.io/badge/license-MIT-blue) ![Version](https://img.shields.io/badge/version-0.1.1-informational) ![Built for Claude Code](https://img.shields.io/badge/built%20for-Claude%20Code-8A3FFC) ![Python](https://img.shields.io/badge/python-3.12-3776AB) ![Status](https://img.shields.io/badge/status-stable-brightgreen)
 
 Librarian takes the findings you have already dug up (research summaries, extracted facts, the things you pulled out of a FOIA dump) and files them as clean, structured Markdown notes you can actually find again later. You hand it a batch of items, and it decides what each one is, tags it, lists its sources, and drops it in the right folder. Every note comes out with YAML frontmatter, a `## Sources` section built from your citations, and a filename derived from the title.
 
