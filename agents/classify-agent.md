@@ -24,9 +24,9 @@ description: |-
   <example>
   Context: The user wants a blog post drafted from their research.
   user: "Turn this research into a published blog post."
-  assistant: "That's outward-facing prose — Prose Craft handles that, not the classify-agent."
+  assistant: "That's outward-facing prose — Copydesk handles that, not the classify-agent."
   <commentary>
-  This agent structures INTERNAL findings notes. It must not be used for outward-facing prose; Librarian and Prose Craft never cross-trigger.
+  This agent structures INTERNAL findings notes. It must not be used for outward-facing prose; Librarian and Copydesk never cross-trigger.
   </commentary>
   </example>
 model: haiku
