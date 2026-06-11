@@ -1,7 +1,7 @@
 {
   "name": "librarian",
-  "version": "0.1.0",
-  "description": "Structured, interlinked findings notes for follow-up and retrieval — portable Markdown/CSV by default, Obsidian-vault-aware when present. Shared output layer for the Fieldwork suite (Magpie, Research). Distinct from Prose Craft (outward-facing prose). Fieldwork: Librarian.",
+  "version": "0.1.1",
+  "description": "Files your findings as clean, interlinked Markdown notes you can actually find again: classify, tag, cite, and place each item, portable by default and Obsidian-vault-aware when a vault is present. The shared output layer beneath Researcher and Magpie. Part of the Fieldwork investigative suite.",
   "author": {
     "name": "Tim Simpson",
     "email": "tim@timsimpsonjr.com"
