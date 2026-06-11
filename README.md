@@ -6,6 +6,8 @@
 
 Every note comes out with YAML frontmatter, a `## Sources` section built from your citations, and a filename derived from the title. No Obsidian vault? Librarian still works: point it at a plain folder and it writes portable Markdown and CSV you own, readable in any editor. Either way it writes internal working notes for your own follow-up and retrieval; polishing prose for an audience is Copydesk's job, and the two never step on each other.
 
+Most of the time you will not run Librarian on its own. It is the output layer that Researcher and Magpie write through, so it is usually already doing its job in the background of those two; reaching for it directly makes sense mainly when you have a batch of findings to file by hand.
+
 ## How it works
 
 **Incoming findings** → `classify-agent` structures them into note specs → validation flags any issues as leads (never dropping a note) → notes are placed in your vault by your folder conventions and written as Markdown (plus CSV for tables) → `wikilink-scanner` links them into your existing notes and the map-of-content pages refresh → **a linked, browsable vault**. *Without a vault, the same pipeline writes portable Markdown and CSV into a plain folder.*
