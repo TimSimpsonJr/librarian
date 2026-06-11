@@ -8,19 +8,7 @@ It works with nothing but a folder of Markdown files, so you do not need any par
 
 ## How it works
 
-```mermaid
-flowchart TD
-    A["Incoming findings / summaries"] --> B["classify-agent<br/>structure into note specs"]
-    B --> C["validate_note_specs<br/>normalize, warn as leads"]
-    C --> D{"Vault configured?"}
-    D -->|portable default| E["write_note / write_table<br/>Markdown + CSV into a folder"]
-    D -->|vault-aware| F["vault_mode.resolve_notes<br/>place by conventions, update vs create"]
-    F --> G["write_note / write_table"]
-    G --> H["wikilink-scanner<br/>plan the wikilinks"]
-    H --> I["apply edits, update map-of-content pages"]
-    E --> J["Linked, browsable notes"]
-    I --> J
-```
+**Incoming findings** → `classify-agent` structures them into note specs → validation flags any issues as leads (never dropping a note) → `write_note` / `write_table` write Markdown plus CSV → *in vault mode only,* `wikilink-scanner` plans the links and the map-of-content pages refresh → **linked, browsable notes**.
 
 The path is the same one each Fieldwork tool feeds into: classify the findings into note specs, validate them, write the notes (Markdown, plus CSV for tables), and, only when a vault is present, scan for wikilinks and refresh the index pages.
 
