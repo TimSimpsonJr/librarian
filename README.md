@@ -2,13 +2,13 @@
 
 ![License](https://img.shields.io/badge/license-MIT-blue) ![Version](https://img.shields.io/badge/version-0.1.1-informational) ![Built for Claude Code](https://img.shields.io/badge/built%20for-Claude%20Code-8A3FFC) ![Python](https://img.shields.io/badge/python-3.12-3776AB) ![Status](https://img.shields.io/badge/status-stable-brightgreen)
 
-Librarian takes the findings you have already dug up (research summaries, extracted facts, the things you pulled out of a FOIA dump) and files them as clean, structured Markdown notes you can actually find again later. You hand it a batch of items, and it decides what each one is, tags it, lists its sources, and drops it in the right folder. Every note comes out with YAML frontmatter, a `## Sources` section built from your citations, and a filename derived from the title.
+**Librarian keeps your Obsidian vault organized.** Hand it the findings you have dug up (research summaries, extracted facts, the things you pulled out of a FOIA dump) and it files them as proper vault notes: classified by type, tagged, cited, and dropped into the right folder by your conventions, then cross-linked with `[[wikilinks]]` into the notes you already have, with your map-of-content pages kept current. It also builds and maintains a full-text search index of the vault, so when a new finding matches a note you already wrote, it updates that note instead of leaving you a duplicate.
 
-It works with nothing but a folder of Markdown files, so you do not need any particular app. If you keep an Obsidian vault, Librarian notices and does more: it places notes by your folder conventions, cross-links them with `[[wikilinks]]` to what you already have, and keeps your map-of-content pages current. It writes internal working notes for your own follow-up and retrieval. Polishing prose for an audience is Copydesk's job, and the two never step on each other.
+Every note comes out with YAML frontmatter, a `## Sources` section built from your citations, and a filename derived from the title. No Obsidian vault? Librarian still works: point it at a plain folder and it writes portable Markdown and CSV you own, readable in any editor. Either way it writes internal working notes for your own follow-up and retrieval; polishing prose for an audience is Copydesk's job, and the two never step on each other.
 
 ## How it works
 
-**Incoming findings** → `classify-agent` structures them into note specs → validation flags any issues as leads (never dropping a note) → `write_note` / `write_table` write Markdown plus CSV → *in vault mode only,* `wikilink-scanner` plans the links and the map-of-content pages refresh → **linked, browsable notes**.
+**Incoming findings** → `classify-agent` structures them into note specs → validation flags any issues as leads (never dropping a note) → notes are placed in your vault by your folder conventions and written as Markdown (plus CSV for tables) → `wikilink-scanner` links them into your existing notes and the map-of-content pages refresh → **a linked, browsable vault**. *Without a vault, the same pipeline writes portable Markdown and CSV into a plain folder.*
 
 The path is the same one each Fieldwork tool feeds into: classify the findings into note specs, validate them, write the notes (Markdown, plus CSV for tables), and, only when a vault is present, scan for wikilinks and refresh the index pages.
 
@@ -24,7 +24,7 @@ The path is the same one each Fieldwork tool feeds into: classify the findings i
 
 The tedious part of an investigation comes after the finding: keeping what you dug up in a shape you can still use weeks later. Librarian does that filing the same way every time. Notes are classified the same way every time (the same entity always gets the same tag), and every claim carries its sources, so two weeks later you can still tell where a fact came from.
 
-Because the default output is plain Markdown and CSV with no vault, no index, and no network required, your notes are portable: just files you own, readable in any editor. When you do run a vault, the extra wiring (wikilinks, folder placement, map-of-content updates) happens on top of that same portable core, never in place of it. And because it is the shared output layer for the whole Fieldwork suite, a Researcher web pass and a Magpie data pass both land in one consistent, linked set of notes instead of each tool inventing its own structure.
+Point it at an Obsidian vault and the filing compounds: every finding lands where your conventions say it should, wired into your existing notes with wikilinks and reachable from your map-of-content pages, and the search index means a second pass updates what you already wrote instead of piling up duplicates. Because it is the shared output layer for the whole Fieldwork suite, a Researcher web pass and a Magpie data pass both land in one consistent, linked vault instead of each tool inventing its own structure. And there is no lock-in: every note is plain Markdown and CSV you own, readable in any editor, with or without a vault.
 
 ## Quick start
 
@@ -35,9 +35,9 @@ Install it from the Fieldwork marketplace:
 /plugin install librarian@fieldwork
 ```
 
-Librarian is usually pulled in automatically as the output layer for Researcher and Magpie, so you may already have it. Installing it on its own works too.
+Researcher and Magpie both require Librarian as their output layer, so if you use either one, install Librarian from the same marketplace. It also works on its own.
 
-No setup is required for portable mode: it writes Markdown and CSV into whatever folder you point it at. To use vault mode, have an Obsidian vault ready and supply its path as `vault_context` when you run it. To tailor the content types and folders to your beat, copy `config/taxonomy.example.json` to `config/taxonomy.json` and edit it.
+To file into your Obsidian vault, have the vault ready and supply its path as `vault_context` when you run it. With no vault, Librarian runs in portable mode and writes Markdown and CSV into whatever folder you point it at. To tailor the content types and folders to your beat, copy `config/taxonomy.example.json` to `config/taxonomy.json` and edit it.
 
 Then hand it a batch of findings:
 
@@ -87,7 +87,7 @@ The suite is 111 tests, all offline, no API key needed. They cover the portable 
 ## Part of the Fieldwork suite
 - [Researcher](https://github.com/TimSimpsonJr/researcher): gather sources into cited notes
 - [Magpie](https://github.com/TimSimpsonJr/magpie): analyze FOIA/data into findings
-- [Librarian](https://github.com/TimSimpsonJr/librarian): file findings as linked notes (shared layer)
+- [Librarian](https://github.com/TimSimpsonJr/librarian): organize findings into linked vault notes (shared layer)
 - [Copydesk](https://github.com/TimSimpsonJr/copydesk): write findings up in your voice
 
 ## License

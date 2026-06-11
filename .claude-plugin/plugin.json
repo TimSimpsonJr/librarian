@@ -1,7 +1,7 @@
 {
   "name": "librarian",
   "version": "0.1.1",
-  "description": "Files your findings as clean, interlinked Markdown notes you can actually find again: classify, tag, cite, and place each item, portable by default and Obsidian-vault-aware when a vault is present. The shared output layer beneath Researcher and Magpie. Part of the Fieldwork investigative suite.",
+  "description": "Keeps your Obsidian vault organized: files your findings as classified, tagged, cited notes, placed by your folder conventions and cross-linked with wikilinks, with a full-text index so re-runs update notes instead of duplicating them. Works as portable Markdown without a vault. The shared output layer beneath Researcher and Magpie. Part of the Fieldwork investigative suite.",
   "author": {
     "name": "Tim Simpson",
     "email": "tim@timsimpsonjr.com"
