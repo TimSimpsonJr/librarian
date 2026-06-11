@@ -4,7 +4,7 @@
 
 Librarian takes the findings you have already dug up (research summaries, extracted facts, the things you pulled out of a FOIA dump) and files them as clean, structured Markdown notes you can actually find again later. You hand it a batch of items, and it decides what each one is, tags it, lists its sources, and drops it in the right folder. Every note comes out with YAML frontmatter, a `## Sources` section built from your citations, and a filename derived from the title.
 
-It works with nothing but a folder of Markdown files, so you do not need any particular app. If you keep an Obsidian vault, Librarian notices and does more: it places notes by your folder conventions, cross-links them with `[[wikilinks]]` to what you already have, and keeps your map-of-content pages current. It writes internal working notes for your own follow-up and retrieval, not articles for readers: polishing prose for an audience is Copydesk's job, and the two never step on each other.
+It works with nothing but a folder of Markdown files, so you do not need any particular app. If you keep an Obsidian vault, Librarian notices and does more: it places notes by your folder conventions, cross-links them with `[[wikilinks]]` to what you already have, and keeps your map-of-content pages current. It writes internal working notes for your own follow-up and retrieval. Polishing prose for an audience is Copydesk's job, and the two never step on each other.
 
 ## How it works
 
@@ -22,9 +22,9 @@ The path is the same one each Fieldwork tool feeds into: classify the findings i
 
 ## Why it's useful
 
-The tedious part of an investigation comes after the finding: keeping what you dug up in a shape you can still use weeks later. Librarian does that filing the same way every time. Notes are classified consistently, the same entity gets the same tag in every note, and every claim carries its sources, so two weeks later you can still tell where a fact came from.
+The tedious part of an investigation comes after the finding: keeping what you dug up in a shape you can still use weeks later. Librarian does that filing the same way every time. Notes are classified the same way every time (the same entity always gets the same tag), and every claim carries its sources, so two weeks later you can still tell where a fact came from.
 
-Because the default output is plain Markdown and CSV with no vault, no index, and no network required, your notes are portable: they are just files you own, readable in any editor and movable to any tool. When you do run a vault, the extra wiring (wikilinks, folder placement, map-of-content updates) happens on top of that same portable core, never in place of it. And because it is the shared output layer for the whole Fieldwork suite, a Researcher web pass and a Magpie data pass both land in one consistent, linked set of notes instead of three different filing styles.
+Because the default output is plain Markdown and CSV with no vault, no index, and no network required, your notes are portable: just files you own, readable in any editor. When you do run a vault, the extra wiring (wikilinks, folder placement, map-of-content updates) happens on top of that same portable core, never in place of it. And because it is the shared output layer for the whole Fieldwork suite, a Researcher web pass and a Magpie data pass both land in one consistent, linked set of notes instead of each tool inventing its own structure.
 
 ## Quick start
 
@@ -66,10 +66,10 @@ File these findings into notes.
 **Safe by construction.** A classifier-supplied folder is untrusted, so placement strips drive letters and `..` traversal and falls back to the default folder, keeping every note under the output root. The note writer never clobbers an existing file: an identical re-run is reported as `identical`, and a genuine slug collision as `collision`, so nothing is silently overwritten. The writers take no clock, vault, or network (any `created` timestamp is supplied by the caller), so the same inputs always produce the same notes.
 
 > [!NOTE]
-> **What you need:** Python 3.12 and [Claude Code](https://docs.anthropic.com/en/docs/claude-code). Librarian is deliberately light: its only runtime dependency is PyYAML, and Claude installs it for you. There are no Docker or heavy-ML tiers here; mise and Node are for contributors only.
+> **What you need:** Python 3.12 and [Claude Code](https://docs.anthropic.com/en/docs/claude-code). Librarian is deliberately light: its only runtime dependency is PyYAML, and Claude installs it for you. (mise and Node are for contributors only.)
 
 > [!IMPORTANT]
-> **Your data & privacy:** Everything runs locally, inside your own Claude Code session. Librarian writes Markdown and CSV files to a folder you choose (or your vault); nothing is uploaded, and there is no external service or API key. The optional SQLite search index lives under `<vault>/.librarian/` on your own disk. Librarian itself does not scan for or remove PII (that is Magpie's job before findings reach this layer), though when a vault redaction policy is configured, vault mode enforces it as notes are written. The folder-traversal guard and never-clobber writer mean an adversarial finding can neither escape your output folder nor overwrite an existing note.
+> **Your data & privacy:** Everything runs locally, inside your own Claude Code session. Librarian writes Markdown and CSV files to a folder you choose (or your vault); nothing is uploaded, and there is no external service or API key. The optional SQLite search index lives under `<vault>/.librarian/` on your own disk. Librarian itself does not scan for or remove PII (that is Magpie's job before findings reach this layer), though when a vault redaction policy is configured, vault mode enforces it as notes are written. A malformed or malicious filename cannot escape your output folder, and nothing already on disk is silently overwritten.
 
 ## For developers
 
