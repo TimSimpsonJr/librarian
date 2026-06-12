@@ -65,8 +65,8 @@ single most important nuance for Task 1.2.
 ### Explicitly out of scope (do NOT port)
 
 - `scripts/produce_output.py` — downstream publishing transformer (Ollama → web_article/
-  social_post/video_script). This is *outward-facing prose* territory, which is **prose-craft's**
-  job, not Librarian's (design §5.7: Librarian and prose-craft must never cross-trigger).
+  social_post/video_script). This is *outward-facing prose* territory, which is **copydesk's**
+  job, not Librarian's (design §5.7: Librarian and copydesk must never cross-trigger).
   Named here because its filename ("produce output") invites mis-porting.
 - `scripts/accumulator.py`, `scripts/case_analyzer.py`, `scripts/learned_patterns.py` —
   the v3.1 case-learning loop (research-workflow Stage 10). Findings-notes is upstream of

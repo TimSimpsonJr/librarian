@@ -17,7 +17,7 @@ fallback if cross-repo resolution has rough edges (design doc §9, §11).
 - `research-workflow` (branch `wire-librarian-dependency`, **not yet merged**) →
   `"dependencies": ["librarian"]`.
 - `fieldwork-plugins/.claude-plugin/marketplace.json` (marketplace name `fieldwork`)
-  lists `magpie`, `research-workflow`, `librarian`, `prose-craft` as github-source
+  lists `magpie`, `research-workflow`, `librarian`, `copydesk` as github-source
   members. Because `librarian` is a **member of the same `fieldwork` marketplace**,
   a `librarian` dependency declared by `magpie`/`research-workflow` resolves
   **same-marketplace** when those are installed via `fieldwork` — no

@@ -1,6 +1,6 @@
 ---
 name: Librarian
-description: This skill should be used when findings, research summaries, extracted facts, or investigation notes need to be STRUCTURED into interlinked knowledge notes for follow-up and retrieval — e.g. "turn these findings into notes", "file this into my notes", "structure this research", "classify these summaries", "write up these findings as notes", or after a research/extraction pass produces summaries that need to land as Markdown notes. Librarian authors INTERNAL findings notes (Markdown + YAML frontmatter, CSV for tables), portable-first and Obsidian-vault-aware when a vault is configured. It does NOT write outward-facing prose (blog posts, articles, published copy) — that is Prose Craft's job, and the two never cross-trigger. If the request is to publish or polish prose for an audience, this is the wrong skill.
+description: This skill should be used when findings, research summaries, extracted facts, or investigation notes need to be STRUCTURED into interlinked knowledge notes for follow-up and retrieval — e.g. "turn these findings into notes", "file this into my notes", "structure this research", "classify these summaries", "write up these findings as notes", or after a research/extraction pass produces summaries that need to land as Markdown notes. Librarian authors INTERNAL findings notes (Markdown + YAML frontmatter, CSV for tables), portable-first and Obsidian-vault-aware when a vault is configured. It does NOT write outward-facing prose (blog posts, articles, published copy) — that is Copydesk's job, and the two never cross-trigger. If the request is to publish or polish prose for an audience, this is the wrong skill.
 version: 0.1.0
 ---
 
@@ -14,8 +14,8 @@ is configured (signaled by a `vault_context`), it additionally places notes by
 folder and realizes wikilinks.
 
 This skill authors *internal* findings notes for follow-up and retrieval. It is
-**not** for outward-facing prose (articles, published copy) — that is Prose Craft.
-Librarian and Prose Craft never trigger on each other.
+**not** for outward-facing prose (articles, published copy) — that is Copydesk.
+Librarian and Copydesk never trigger on each other.
 
 ## The pipeline
 

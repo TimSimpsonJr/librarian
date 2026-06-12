@@ -1,36 +1,97 @@
 # Librarian
 
-**Fieldwork: Librarian** — a shared Claude Code skill that turns findings into
-structured, interlinked, browsable knowledge notes organized for follow-up and
-retrieval.
+![License](https://img.shields.io/badge/license-MIT-blue) ![Version](https://img.shields.io/badge/version-0.1.1-informational) ![Built for Claude Code](https://img.shields.io/badge/built%20for-Claude%20Code-8A3FFC) ![Python](https://img.shields.io/badge/python-3.12-3776AB) ![Status](https://img.shields.io/badge/status-stable-brightgreen)
 
-Librarian is the **output layer** for the Fieldwork suite. Magpie and Research both
-depend on it (auto-pulled via plugin `dependencies`). It authors *internal* findings
-notes — explicitly **not** outward-facing prose. That is Prose Craft's job, and the
-two never trigger on each other.
+**Librarian keeps your Obsidian vault organized.** Hand it the findings you have dug up (research summaries, extracted facts, the things you pulled out of a FOIA dump) and it files them as proper vault notes: classified by type, tagged, cited, and dropped into the right folder by your conventions, then cross-linked with `[[wikilinks]]` into the notes you already have, with your map-of-content pages kept current. It also builds and maintains a full-text search index of the vault, so when a new finding matches a note you already wrote, it updates that note instead of leaving you a duplicate.
 
-> **Status:** Layer 0–1 extraction in progress. Librarian is being decoupled from
-> research-workflow's Stages 6/7/8 (classify → write → wikilink). The extraction is
-> decoupling, not rewriting (see the Magpie design doc §5.7).
+Every note comes out with YAML frontmatter, a `## Sources` section built from your citations, and a filename derived from the title. No Obsidian vault? Librarian still works: point it at a plain folder and it writes portable Markdown and CSV you own, readable in any editor. Either way it writes internal working notes for your own follow-up and retrieval; polishing prose for an audience is Copydesk's job, and the two never step on each other.
 
-## What it does
+Most of the time you will not run Librarian on its own. It is the output layer that Researcher and Magpie write through, so it is usually already doing its job in the background of those two; reaching for it directly makes sense mainly when you have a batch of findings to file by hand.
 
-- **Portable-first output.** Markdown notes with YAML frontmatter and a `## Sources`
-  section, plus CSV for tabular payloads. No vault required.
-- **Vault-aware when present.** When an Obsidian vault is configured, it places notes,
-  adds wikilinks (companion `wikilink-scanner` agent), and enforces the vault
-  redaction policy.
-- **Config-driven taxonomy.** Folder conventions and content-type tags are
-  configuration, not hardcoded.
+## How it works
 
-## Input contract
+**Incoming findings** → `classify-agent` structures them into note specs → validation flags any issues as leads (never dropping a note) → notes are placed in your vault by your folder conventions and written as Markdown (plus CSV for tables) → `wikilink-scanner` links them into your existing notes and the map-of-content pages refresh → **a linked, browsable vault**. *Without a vault, the same pipeline writes portable Markdown and CSV into a plain folder.*
+
+The path is the same one each Fieldwork tool feeds into: classify the findings into note specs, validate them, write the notes (Markdown, plus CSV for tables), and, only when a vault is present, scan for wikilinks and refresh the index pages.
+
+## What you can do with it
+
+- **Turn a batch of findings into filed notes.** "Turn these findings into notes" or "file this into my notes" runs the classify step, then writes each item as its own Markdown note with frontmatter and a sources section.
+- **Classify summaries without committing to a folder layout.** "Classify these summaries" maps each item to a content type from your taxonomy (`report`, `reference`, `entity`, `event`, `dataset`, `analysis`, `timeline`, `index`, `source`, `note`), orders its tags, and sets its priority.
+- **File a research pass straight into your vault.** "File these findings into my vault and update existing notes if they already exist" switches on vault mode: it queries your vault index, routes matching items to update existing notes, and places new ones by your folder conventions.
+- **Write tabular exhibits as CSV.** Stats tables and redacted exhibits go through `write_table`, which emits a `.csv` file and hands back a Markdown-table mirror you can embed in a note.
+- **Cross-link a batch you just wrote.** "Plan wikilinks for the notes I just created" runs the wikilink-scanner: it links mentions among the new notes and resolves their link hints, and (in vault mode) searches the index for existing notes to link to as well.
+
+## Why it's useful
+
+The tedious part of an investigation comes after the finding: keeping what you dug up in a shape you can still use weeks later. Librarian does that filing the same way every time. Notes are classified the same way every time (the same entity always gets the same tag), and every claim carries its sources, so two weeks later you can still tell where a fact came from.
+
+Point it at an Obsidian vault and the filing compounds: every finding lands where your conventions say it should, wired into your existing notes with wikilinks and reachable from your map-of-content pages, and the search index means a second pass updates what you already wrote instead of piling up duplicates. Because it is the shared output layer for the whole Fieldwork suite, a Researcher web pass and a Magpie data pass both land in one consistent, linked vault instead of each tool inventing its own structure. And there is no lock-in: every note is plain Markdown and CSV you own, readable in any editor, with or without a vault.
+
+## Quick start
+
+Install it from the Fieldwork marketplace:
 
 ```
-[{title, content, frontmatter_meta, citations, link_hints, priority, action}]
+/plugin marketplace add TimSimpsonJr/fieldwork-plugins
+/plugin install librarian@fieldwork
 ```
 
-plus an optional `vault_context`.
+Researcher and Magpie both require Librarian as their output layer, so if you use either one, install Librarian from the same marketplace. It also works on its own.
+
+To file into your Obsidian vault, have the vault ready and supply its path as `vault_context` when you run it. With no vault, Librarian runs in portable mode and writes Markdown and CSV into whatever folder you point it at. To tailor the content types and folders to your beat, copy `config/taxonomy.example.json` to `config/taxonomy.json` and edit it.
+
+Then hand it a batch of findings:
+
+```
+File these findings into notes.
+```
+
+## Under the hood
+
+**Two modes from one core.** Portable mode is the default and a strict subset of vault mode: it never touches a vault, an index, or the network. Vault mode is layered on top and only switches on when you supply a `vault_context`.
+
+| | Portable (default) | Vault-aware (vault_context present) |
+|---|---|---|
+| Output | Markdown notes + CSV tables into a folder | Same, placed by your vault's folder conventions |
+| Dedup / update | `create` only; honors `update` only with an explicit target | Queries the vault index to route `update` vs `create` |
+| Wikilinks | Links among the new batch + each note's link hints | Also searches the index for existing notes to link |
+| Map-of-content | n/a | Refreshes MOC/index pages matching your `moc_pattern` |
+| Dependencies | PyYAML + Python stdlib | Adds an optional SQLite FTS5 index under `<vault>/.librarian/` |
+
+**The neutral note spec.** Every note flows through one contract the whole suite shares: `{title, content, frontmatter_meta, citations, link_hints, priority, action}`. The `classify-agent` (Haiku) emits it, `validate_note_specs` normalizes it, `vault_mode.resolve_notes` places it, and `write_note` / `write_table` render it.
+
+**Config-driven taxonomy, not a hardcoded enum.** Content types, tag ordering and limits, the default folder, folder conventions, frontmatter fields, and the MOC pattern all come from `config/taxonomy.json` (falling back to the bundled neutral example). The skill and agents read those values; nothing is baked in.
+
+**Flags as leads, never verdicts.** Validation warns about an unknown content type, an out-of-range tag count, a missing title, or an invalid priority, but it never drops a note. You review the warnings; the note still gets written.
+
+**Safe by construction.** A classifier-supplied folder is untrusted, so placement strips drive letters and `..` traversal and falls back to the default folder, keeping every note under the output root. The note writer never clobbers an existing file: an identical re-run is reported as `identical`, and a genuine slug collision as `collision`, so nothing is silently overwritten. The writers take no clock, vault, or network (any `created` timestamp is supplied by the caller), so the same inputs always produce the same notes.
+
+> [!NOTE]
+> **What you need:** Python 3.12 and [Claude Code](https://docs.anthropic.com/en/docs/claude-code). Librarian is deliberately light: its only runtime dependency is PyYAML, and Claude installs it for you. (mise and Node are for contributors only.)
+
+> [!IMPORTANT]
+> **Your data & privacy:** Everything runs locally, inside your own Claude Code session. Librarian writes Markdown and CSV files to a folder you choose (or your vault); nothing is uploaded, and there is no external service or API key. The optional SQLite search index lives under `<vault>/.librarian/` on your own disk. Librarian itself does not scan for or remove PII (that is Magpie's job before findings reach this layer), though when a vault redaction policy is configured, vault mode enforces it as notes are written. A malformed or malicious filename cannot escape your output folder, and nothing already on disk is silently overwritten.
+
+## For developers
+
+```bash
+pip install -r requirements-dev.txt
+pytest tests/ -v
+```
+
+The suite is 111 tests, all offline, no API key needed. They cover the portable writer (frontmatter, sources, never-clobber), the table writer (CSV plus Markdown mirror), taxonomy load/merge and spec validation, the portable-vs-vault routing seam (including the guard that the portable path never imports SQLite), folder-traversal neutering, and that every shipped skill and agent has parseable frontmatter.
+
+**Requirements:** Python 3.12, [Claude Code](https://docs.anthropic.com/en/docs/claude-code). An [Obsidian](https://obsidian.md/) vault is optional and only needed for vault mode.
+
+**Runtime dependency:** PyYAML (frontmatter emission). The optional SQLite index uses the Python standard library; there is nothing extra to install. SQLite FTS5 is used when available, with a transparent LIKE-scan fallback when it is not.
+
+## Part of the Fieldwork suite
+- [Researcher](https://github.com/TimSimpsonJr/researcher): gather sources into cited notes
+- [Magpie](https://github.com/TimSimpsonJr/magpie): analyze FOIA/data into findings
+- [Librarian](https://github.com/TimSimpsonJr/librarian): organize findings into linked vault notes (shared layer)
+- [Copydesk](https://github.com/TimSimpsonJr/copydesk): write findings up in your voice
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).
